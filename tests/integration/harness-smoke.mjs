@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
@@ -14,6 +14,9 @@ const patch = fileURLToPath(new URL('../../src/preset/cordis.patch.yml', import.
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url), 'utf8'))
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
 const workspace = await mkdtemp(join(tmpdir(), 'dsh-task-collaborator-'))
+const recoveryPatch = join(workspace, 'recovery.patch.yml')
+const recoveryPlugin = new URL('./fixtures/workspace-attach.mjs', import.meta.url).href
+const reservedId = `session-${randomUUID()}`
 const requests = []
 const provider = createServer(async (request, response) => {
   try {
@@ -39,9 +42,9 @@ let child
 let childClosed
 let output
 
-function startHarness() {
+function startHarness(phase, cwd) {
   child = spawn(process.execPath, [
-    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
+    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', recoveryPatch,
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
     cwd: checkout,
@@ -51,6 +54,9 @@ function startHarness() {
       DSH_AGENTS_HOME: join(workspace, 'agents'),
       DEEPSEEK_API_KEY: 'mock-workbench-key',
       DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      WORKBENCH_TEST_CWD: cwd,
+      WORKBENCH_TEST_RESERVED_ID: reservedId,
+      WORKBENCH_TEST_RECOVERY_PHASE: phase,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -89,7 +95,7 @@ async function connectHarness() {
   const landing = await fetch(origin, { headers: { cookie } })
   assert.equal(landing.status, 200)
 
-  return async function rpc(method, request) {
+  return async function rpc(method, request, expectedError) {
     const response = await fetch(`${origin}/api/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
@@ -98,6 +104,11 @@ async function connectHarness() {
     })
     assert.equal(response.status, 200, method)
     const { result } = await response.json()
+    if (expectedError !== undefined) {
+      assert.equal(result.ok, false, `${method} should fail with ${expectedError}`)
+      assert.equal(result.error.code, expectedError)
+      return result.error
+    }
     assert.equal(result.ok, true, `${method}: ${JSON.stringify(result.error)}`)
     return result.value
   }
@@ -105,7 +116,10 @@ async function connectHarness() {
 }
 
 try {
-  startHarness()
+  const cwd = await realpath(workspace)
+  const recoveryFixture = `\n- insert:\n    - id: workbench-test-workspace-attach\n      name: ${JSON.stringify(recoveryPlugin)}\n`
+  await writeFile(recoveryPatch, await readFile(patch, 'utf8') + recoveryFixture)
+  startHarness('fail-attach', cwd)
   let rpc = await connectHarness()
 
   async function requestTurn(options, prompt) {
@@ -130,15 +144,15 @@ try {
   assert.doesNotMatch(JSON.stringify(standard.modelRequest.system), /You are my task collaborator/)
   console.log('PASS: Web startup, collaborator preset, prompt injection, file/research/skill/present tools, and standard preset isolation.')
 
-  // Construct the durable state of a crash between creation and attachment.
-  // cwd-only creation intentionally omits the workspace side effect.
   const { workspace: registered } = await rpc('workspace/create', { path: workspace })
-  const reservedId = `session-${randomUUID()}`
-  const orphan = await rpc('session/create', { cwd: workspace, sessionId: reservedId })
-  assert.equal(orphan.sessionId, reservedId)
+  const failure = await rpc('session/create', {
+    workspaceId: registered.workspaceId, sessionId: reservedId, agentPreset: 'task-collaborator',
+  }, 'session/workspace-attach-failed')
+  assert.match(failure.message, /Injected before workspace attachment/)
+  assert.deepEqual(failure.details, { sessionId: reservedId, workspaceId: registered.workspaceId })
 
   await stopHarness()
-  startHarness()
+  startHarness('observe', cwd)
   rpc = await connectHarness()
   const { workspace: recovered } = await rpc('workspace/create', { path: workspace })
   assert.equal(recovered.workspaceId, registered.workspaceId)
@@ -151,7 +165,28 @@ try {
   const { workspace: afterRetry } = await rpc('workspace/create', { path: workspace })
   assert.ok(afterRetry.sessionIds.includes(retry.sessionId))
   assert.ok(!afterRetry.sessionIds.includes(reservedId))
-  console.log('PASS: restart preserves an unattached session; blind workspace-create retry mints a replacement.')
+  console.log('PASS: native attach failure returns the original ID; the session survives restart and blind retry creates a replacement.')
+
+  const beforeAttach = await rpc('session/list', {})
+  await stopHarness()
+  startHarness('reattach', cwd)
+  rpc = await connectHarness()
+  const { workspace: reattached } = await rpc('workspace/create', { path: workspace })
+  assert.equal(reattached.workspaceId, registered.workspaceId)
+  assert.equal(reattached.sessionIds.filter(id => id === reservedId).length, 1)
+  const afterAttach = await rpc('session/list', {})
+  assert.deepEqual(
+    afterAttach.items.map(item => item.sessionId).sort(),
+    beforeAttach.items.map(item => item.sessionId).sort(),
+    'repair does not create another session',
+  )
+
+  await stopHarness()
+  startHarness('observe', cwd)
+  rpc = await connectHarness()
+  const { workspace: restored } = await rpc('workspace/create', { path: workspace })
+  assert.deepEqual(restored.sessionIds, reattached.sessionIds)
+  console.log('PASS: Host attachment reuses the original ID without duplication and survives another restart.')
 } finally {
   await stopHarness()
   provider.closeAllConnections()
