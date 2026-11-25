@@ -7,8 +7,8 @@
 | DEV-001 | FR-001 | src/preset | — | done | 预设及模拟模型集成通过，逐项断言必需工具 |
 | DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、元模式验证、负例回归与 PR 流程 |
 | DEV-003 | FR-002 | src/domain | DEV-002 | done | 纯状态机、领域测试与契约校验 |
-| DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | planned | 兼容试验、会话绑定、授权及故障恢复 |
-| DEV-005 | NFR-003 | src/storage | DEV-003 | planned | 数据域、幂等回执、备份与恢复测试 |
+| DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | active | 兼容试验、会话绑定、授权及故障恢复 |
+| DEV-005 | NFR-003 | src/storage | DEV-003 | active | 数据域、幂等回执、备份与恢复测试 |
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | planned | 用例、冲突控制、接受退回及故障注入测试 |
 | DEV-007 | FR-005 | src/delivery | DEV-004 | planned | 原生事件、交付版本与证据校验 |
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | planned | 任务界面及两条 M1 验收链路 |
@@ -16,3 +16,12 @@
 | DEV-010 | FR-009 | src/application | DEV-006 | planned | 索引及阶段交接 |
 | DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | planned | 有限委派与冲突隔离验证 |
 | DEV-012 | — | tests/integration | DEV-006 | planned | M1 跨模块联调，先完成恢复、原生展示到提交、漂移退回及重交接受 |
+
+## 当前领取
+
+本地协作登记写在主工作目录的这份表。各 Agent 在自己的工作树开发，并以提交编号回填验收；其他工作树保留各自的文件和改动。
+
+| 工单 | 负责人 | 分支 | 改动范围 |
+| --- | --- | --- | --- |
+| DEV-004 | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
+| DEV-005 | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
