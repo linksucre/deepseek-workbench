@@ -213,7 +213,7 @@ function renderDetail() {
     }))
     const metadata = node('div', undefined, 'actions')
     metadata.append(node('code', run.rootSessionId), copy, link)
-    detail.append(conversationPanel(task, metadata))
+    detail.append(conversationPanel(task, metadata), reviewPanel(task))
   }
   if (task.status === 'blocked') detail.append(recoveryEditor())
   detail.append(usagePanel(task.id))
@@ -289,6 +289,70 @@ function coverageNote(note) {
   if (/^\d+ attempt.*missing or ambiguous/.test(note)) return `${note.split(' ')[0]} 次模型尝试缺少可核验计数，仅汇总可得字段。`
   if (/^\d+ attempt.*no verified provider/.test(note)) return `${note.split(' ')[0]} 次模型尝试无法确认提供方和模型。`
   return note
+}
+
+function reviewPanel(task) {
+  const history = node('div', undefined, 'conversation-history')
+  history.setAttribute('aria-live', 'polite')
+  const area = section('独立审阅', history)
+  const change = (operation, payload, success) => perform(async () => {
+    await mutate(operation, { taskId: task.id, expectedRevision: task.revision, ...payload })
+    feedback(success)
+    if (selected?.task.id === task.id) await loadTask(task.id)
+  })
+  async function refresh() {
+    try {
+      const { items } = await command('task.reviews', { taskId: task.id })
+      const statuses = { reserved: '待核对或仍在执行', completed: '已完成', incomplete: '未完成' }
+      const rows = [...items].reverse().map(review => {
+        const row = node('article', undefined, 'message')
+        row.append(node('strong', review.instruction), node('p', statuses[review.status], 'subtle'))
+        if (review.summary) row.append(node('p', review.summary))
+        if (review.status === 'reserved') row.append(button('核对审阅', () =>
+          change('task.review.reconcile', { reviewId: review.reviewId }, '已核对审阅')))
+        if (review.status === 'completed' && review.summary && task.status === 'active' && task.activeRunId === review.runId) {
+          row.append(button('把审阅发给主 Agent', () =>
+            change('task.review.forward', { reviewId: review.reviewId }, '已发给主 Agent')))
+        }
+        return row
+      })
+      history.replaceChildren(...(rows.length ? rows : [node('p', '还没有审阅', 'subtle')]))
+    } catch (error) {
+      history.textContent = error.message
+    }
+  }
+  if (task.status === 'active') {
+    const form = node('form', undefined, 'prompt-form')
+    function field(label, rows, maxLength) {
+      const name = node('label', label, 'field')
+      const input = node('textarea')
+      input.required = true
+      input.rows = rows
+      input.maxLength = maxLength
+      name.append(input)
+      form.append(name)
+      return input
+    }
+    const instruction = field('需要审阅的问题', 2, 2048)
+    const material = field('选中材料（问题和材料合计最多 24 KiB）', 4, 24576)
+    const submit = node('button', '发起审阅', 'primary')
+    submit.type = 'submit'
+    form.append(submit)
+    form.addEventListener('submit', event => {
+      event.preventDefault()
+      const question = instruction.value.trim()
+      const selectedMaterial = material.value.trim()
+      if (!question || !selectedMaterial ||
+          new TextEncoder().encode(question + selectedMaterial).length > 24 * 1024) {
+        feedback('请填写问题和材料，合计最多 24 KiB。', true)
+        return
+      }
+      void change('task.delegate', { instruction: question, material: selectedMaterial }, '已记录审阅状态')
+    })
+    area.append(form)
+  }
+  void refresh()
+  return area
 }
 
 function conversationPanel(task, metadata) {

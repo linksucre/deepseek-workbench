@@ -76,6 +76,16 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       if (command.intentId !== undefined && current.pendingIntent?.intentId !== command.intentId) {
         reject('RECONCILIATION_REQUIRED', 'Startup intent changed or is no longer pending')
       }
+      if (['pause', 'cancel', 'accept'].includes(command.kind) &&
+          current.reviews.some(review => review.status === 'reserved')) {
+        reject('RECONCILIATION_REQUIRED', 'Resolve the pending review before ending the run')
+      }
+      let reviews = current.reviews
+      if (command.kind === 'reserve-review') reviews = [...reviews, command.review]
+      if (command.kind === 'finish-review') {
+        reviews = reviews.map(review => review.reviewId === command.reviewId
+          ? { ...review, status: command.status, summary: command.summary, throughSeq: command.throughSeq } : review)
+      }
       const detail = evolveTask(current.detail, command, { expectedRevision: input.expectedRevision, now })
       let stages = current.stages
       if (command.kind === 'bind') {
@@ -93,7 +103,7 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         })
       }
       return {
-        detail, stages,
+        detail, stages, reviews,
         pendingIntent: ['block-start', 'record-start-receipt'].includes(command.kind) ? command.intent
           : command.kind === 'bind' || command.kind === 'clear-block' ? null : current.pendingIntent,
       }
@@ -212,6 +222,43 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
           },
         }
       }, { payload: { input, verified } })
+    },
+
+    reserveReview(principal, input) {
+      return mutate(principal, 'task.review.reserve', input, (record, now) => {
+        const runId = record.detail.task.activeRunId
+        const current = record.reviews.filter(review => review.runId === runId)
+        if (current.some(review => review.status === 'reserved') || current.length >= 2) {
+          reject('REVISION_CONFLICT', 'This run has a pending review or reached its review limit')
+        }
+        const instruction = input.instruction.trim()
+        const material = input.material.trim()
+        if (!instruction || !material || Buffer.byteLength(instruction) + Buffer.byteLength(material) > 24 * 1024) {
+          reject('INVALID', 'Choose a review question and at most 24 KiB of material')
+        }
+        return { kind: 'reserve-review', review: {
+          reviewId: newId(), runId, childSessionId: `session-${newId()}`, instruction,
+          status: 'reserved', summary: '', throughSeq: null, createdAt: now,
+          requestId: input.requestId, actorId: user(principal),
+        } }
+      })
+    },
+
+    finishReview(principal, input, native) {
+      return mutate(principal, 'task.review.finish', input, record => {
+        const review = record.reviews.find(item => item.reviewId === input.reviewId)
+        if (!review || review.status !== 'reserved' ||
+            review.runId !== record.detail.task.activeRunId || native.childSessionId !== review.childSessionId) {
+          reject('RECONCILIATION_REQUIRED', 'Review no longer matches the reserved child')
+        }
+        return {
+          kind: 'finish-review', reviewId: review.reviewId, runId: review.runId,
+          verifiedChild: native.verified ? review.childSessionId : null,
+          status: native.verified && native.outcome === 'completed' ? 'completed' : 'incomplete',
+          summary: native.verified ? native.summary : '',
+          throughSeq: native.verified ? native.throughSeq : null,
+        }
+      }, { payload: { input, native } })
     },
 
     finishLifecycle(principal, input, kind) {

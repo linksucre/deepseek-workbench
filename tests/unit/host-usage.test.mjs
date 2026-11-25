@@ -98,3 +98,16 @@ test('excludes post-close events and marks legacy runs without a verified start 
   assert.deepEqual(legacy.buckets, [])
   assert.deepEqual(reads, ['root'])
 })
+
+test('a delegated review only contributes usage through its verified first turn', async () => {
+  const { host, record, run, observed } = fixture()
+  run.childSessionIds = ['reviewer']
+  record.reviews = [{ childSessionId: 'reviewer', throughSeq: 2 }]
+  observed.set('root', cut('root', [['request/context', route], counts(100, 0), counts(10), catalog('reviewer')]))
+  observed.set('reviewer', cut('reviewer', [['request/context', route], counts(2), ['turn/end', {}], counts(90, 2)],
+    { origin: 'subagent', parentSession: 'root' }))
+  const result = await createHostTaskUsage(host)(owner, taskId)
+  assert.equal(result.completeness, 'complete')
+  assert.equal(result.buckets[0].uncachedInput, 12)
+  assert.equal(result.buckets[0].output, 2)
+})

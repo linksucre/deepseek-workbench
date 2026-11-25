@@ -1,6 +1,6 @@
 # API 契约
 
-公共操作与输入输出的唯一来源为 [operations.json](contracts/v1/operations.json) 和 [schemas.json](contracts/v1/schemas.json)。这些是设计基线，宿主传输通过适配工单验证。目前运行的是原型预设，尚无工作台业务 API。
+公共操作与输入输出的唯一来源为 [operations.json](contracts/v1/operations.json) 和 [schemas.json](contracts/v1/schemas.json)。工作台在本机 Harness Web 上挂载经过认证的命令入口，入参与响应依据契约校验。
 
 应用边界按操作索引验证输入和输出。Web 通过宿主认证及 Remote 访问；模型只见 `agent.suggest` 与 `agent.submit` 的受限公开输入；Host 用当前 ToolExecution 推导绑定。适配层从当前会话推导任务、身份及 requestId。用户决定不暴露给模型。无访问权与不可见资源可统一返回 NOT_FOUND，具体内部原因不写入模型输出。
 
@@ -18,3 +18,7 @@
 `task.conversation` 返回已授权根会话最近的用户和 Agent 文本、执行状态和待交互类别。它不启动 Agent。`task.prompt` 由 Host 选择当前任务绑定的根会话，以任务、Run 和请求 ID 派生原生请求 ID，保留 native queue 语义。重启后原文重放返回既有回执，同 ID 改正文拒绝。新消息要求任务 active 并校验 revision。暂停和取消在原生停止得到确认后变更任务；恢复重验原会话并由后续显式消息唤醒。
 
 `task.usage` 使用已授权任务的原生结算记录。返回提供方与模型分组、输入输出及缓存计数、完整性和覆盖说明。缺少计数时字段为 null；缺少费率、完整计数或统一币种时 estimatedCost 为空。配置软预算后附 softBudget，仅当估算币种一致且金额可比较时判断是否达到提醒。
+
+## DEV-011 评审提案
+
+[`task.delegate`、`task.reviews`、`task.review.reconcile`、`task.review.forward`](contracts/v1/operations.json) 由已认证的本机 owner 调用。派发输入提供问题与选中材料；同一次调用重放返回持久化审阅状态。核对只读取原生会话，依据已验证的第一轮结束事件更新状态。回送要求活动 Run 和已有完整摘要，复用 `task.prompt` 的显式排队及重放语义。设计依据见 [独立审阅](docs/design/M3-BOUNDED-REVIEW.md)。

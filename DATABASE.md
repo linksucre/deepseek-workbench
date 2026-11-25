@@ -1,11 +1,12 @@
 # 数据库与持久化
 
-M1 使用宿主 `storageDomain` 的业务侧存储。逻辑域为 `workbench_tasks`（版本 1），key 为 Task UUID，值为 `{schemaVersion, detail, pendingIntent, stages, operations}`。任务聚合的状态、revision、操作回执与绑定一起通过单键更新持久化。具体域声明和路由先用上游兼容工单验证。使用 Harness 提供的原生物理后端，应用层只有存储适配器接触域句柄。
+M1 使用宿主 `storageDomain` 的业务侧存储。逻辑域为 `workbench_tasks`（版本 1），key 为 Task UUID，值为 `{schemaVersion, detail, pendingIntent, stages, reviews, operations}`。任务聚合的状态、revision、操作回执与绑定一起通过单键更新持久化。具体域声明和路由先用上游兼容工单验证。使用 Harness 提供的原生物理后端，应用层只有存储适配器接触域句柄。
 
 | 结构 | 约束 |
 | --- | --- |
 | pendingIntent | 同任务最多一个未决启动意图，可附已核验的原生创建回执。commit 受当前 revision 及 intentId 约束。 |
 | stages | 记录 Run 的阶段边界和执行选择历史，旧 V1 记录缺少该字段时按空数组读取。 |
+| reviews | 预留、状态和摘要与 Run 一起更新。验证子会话后写入第一轮截止游标，旧 V1 记录缺少该字段时按空数组读取。 |
 | operations | 按操作者、操作、requestId 和输入摘要保存回执。业务持续运行时间内确保重放可核对。 |
 | runs | 根会话 ID 唯一绑定于工作区范围内的一个任务。首版通过单写宿主串行分配并复查全局绑定，跨 Task 原子事务不可假设。 |
 | 列表索引 | 从持久化记录重建的内存投影，用于排序和分页，宿主重启后重算。索引更新失败时标记需重建。 |

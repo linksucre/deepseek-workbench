@@ -17,6 +17,7 @@ const workspace = join(home, 'workspace')
 const overlay = join(home, 'workbench.yml')
 const usagePolicy = join(home, 'usage-policy.json')
 const attempts = new Map()
+let independentReviewRequests = 0
 
 const provider = createServer(async (request, response) => {
   try {
@@ -24,6 +25,12 @@ const provider = createServer(async (request, response) => {
     for await (const part of request) parts.push(part)
     const body = JSON.parse(Buffer.concat(parts).toString('utf8'))
     const serialized = JSON.stringify(body.messages)
+    const independentReview = serialized.includes('browser isolated review material')
+    if (independentReview) {
+      assert.deepEqual(body.tools ?? [], [])
+      assert.doesNotMatch(serialized, /browser review task/)
+      independentReviewRequests += 1
+    }
     const flow = ['browser material revision', 'browser material task', 'browser code task']
       .find(marker => serialized.includes(marker))
     const modeled = flow && body.tools?.some(tool => tool.name === 'present')
@@ -42,7 +49,7 @@ const provider = createServer(async (request, response) => {
         { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
     } else {
-      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '交付已准备好' } })
+      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: independentReview ? '审阅结论文本' : '交付已准备好' } })
     }
     events.push(
       { type: 'content_block_stop', index: 0 },
@@ -181,10 +188,20 @@ try {
   await page.getByText('Token 与费用', { exact: true }).click()
   await page.getByText('部分用量缺报', { exact: true }).waitFor()
   await page.getByText(/预算提醒.*尚无法比较/).waitFor()
+  await create('browser review task', 'documents')
+  await page.getByLabel('需要审阅的问题').fill('核对材料是否完整')
+  await page.getByLabel(/选中材料/).fill('browser isolated review material')
+  await button('发起审阅').click()
+  await page.getByText('审阅结论文本', { exact: true }).waitFor()
+  assert.equal(independentReviewRequests, 1)
+  await button('把审阅发给主 Agent').click()
+  await page.getByText('已发给主 Agent', { exact: true }).waitFor()
+  assert.equal(independentReviewRequests, 1)
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: real browser development and materials flows, conversation, drift, return, acceptance and mobile layout.')
+  console.log('PASS: real browser development and materials flows, conversation, drift, return, acceptance, independent review and mobile layout.')
 } finally {
   await browser?.close()
   await stop()

@@ -19,7 +19,7 @@ export function createHostTaskUsage({ loadTask, canReadSession, workspaceRegistr
     const readBindings = []
     let missingSessions = record.pendingIntent ? 1 : 0
 
-    async function readSession(sessionId, run, matchesHeader, afterSeq, end) {
+    async function readSession(sessionId, run, matchesHeader, afterSeq, end, throughSeq) {
       signal?.throwIfAborted()
       const binding = { principal, task, run, sessionId }
       if (await canReadSession(binding) !== true) return null
@@ -35,7 +35,8 @@ export function createHostTaskUsage({ loadTask, canReadSession, workspaceRegistr
         if (header.id !== sessionId || header.cwd !== cwd || !matchesHeader(header) ||
             await canReadSession(binding) !== true) return null
         signal?.throwIfAborted()
-        const boundary = end === undefined ? -1 : events.findIndex(event => event.time >= end)
+        const boundary = events.findIndex(event => (end !== undefined && event.time >= end) ||
+          (throughSeq !== undefined && event.seq > throughSeq))
         const scopedEvents = boundary === -1 ? events : events.slice(0, boundary)
         readBindings.push(binding)
         return { sessionId, afterSeq, inheritedEventCount, events: scopedEvents }
@@ -44,6 +45,8 @@ export function createHostTaskUsage({ loadTask, canReadSession, workspaceRegistr
       }
     }
 
+    const reviewCutoffs = new Map((record.reviews ?? []).filter(review => review.throughSeq !== null)
+      .map(review => [review.childSessionId, review.throughSeq]))
     for (const run of runs) {
       const scopeStart = record.stages?.find(stage => stage.runId === run.id)?.afterSeq
       const end = run.endedAt === null ? undefined : Date.parse(run.endedAt)
@@ -74,7 +77,8 @@ export function createHostTaskUsage({ loadTask, canReadSession, workspaceRegistr
           unreadable.add(childId)
           if (!expected.has(childId) || mode === 'external') continue
           const child = await readSession(childId, run, header => header.origin === 'subagent' &&
-            header.parentSession === parent.sessionId && header.createdAt === childCreatedAt, -1, end)
+            header.parentSession === parent.sessionId && header.createdAt === childCreatedAt, -1, end,
+            reviewCutoffs.get(childId))
           if (child === null) continue
           unreadable.delete(childId)
           verified.push(child)

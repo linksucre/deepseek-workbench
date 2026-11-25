@@ -25,11 +25,17 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
       choice: z.unknown(), observedAt: text,
     })),
   })
+  const review = z.strictObject({
+    reviewId: text, runId: text, childSessionId: text, instruction: text.refine(value => [...value].length <= 2048),
+    status: z.enum(['reserved', 'completed', 'incomplete']), summary: z.string().max(8192), createdAt: text,
+    requestId: text, actorId: text, throughSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable(),
+  })
   const schema = z.strictObject({
     schemaVersion: z.literal(1),
     detail,
     pendingIntent: intent.nullable(),
     stages: z.array(stage).default([]),
+    reviews: z.array(review).default([]),
     operations: z.array(receipt).min(1),
   })
   const domain = await storageDomain.open(defineDomain({
@@ -63,6 +69,9 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
         parsed.operations.some(item => item.result.task.id !== key) ||
         (parsed.pendingIntent && parsed.pendingIntent.workspaceId !== parsed.detail.task.workspaceId)) {
       throw new TaskError('INVALID', 'Storage key, task or intent identity mismatch')
+    }
+    if (parsed.reviews.some(review => !parsed.detail.runs.some(run => run.id === review.runId))) {
+      throw new TaskError('INVALID', 'Delegated review does not refer to a task run')
     }
     for (const stage of parsed.stages) {
       if (!parsed.detail.runs.some(run => run.id === stage.runId) ||
@@ -146,7 +155,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
           if (prior.detail.task.revision !== input.expectedRevision) {
             throw new TaskError('REVISION_CONFLICT', 'Task revision changed')
           }
-          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages }))
+          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages, reviews: prior.reviews }))
           if (next.detail.task.revision !== input.expectedRevision + 1 ||
               next.detail.task.workspaceId !== prior.detail.task.workspaceId) {
             throw new TaskError('INVALID', 'A commit must advance one revision within the same workspace')
@@ -156,6 +165,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
             detail: structuredClone(next.detail),
             pendingIntent: structuredClone(next.pendingIntent),
             stages: structuredClone(next.stages ?? prior.stages),
+            reviews: structuredClone(next.reviews ?? prior.reviews),
             operations: [...prior.operations, { ...identity, result: structuredClone(next.detail) }],
           })
         })

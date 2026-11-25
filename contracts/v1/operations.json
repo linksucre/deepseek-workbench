@@ -127,6 +127,34 @@
       "output": "ConversationView",
       "actor": "user",
       "requirement": "FR-007"
+    },
+    {
+      "id": "task.delegate",
+      "input": "DelegateReview",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.reviews",
+      "input": "GetTask",
+      "output": "ReviewList",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.reconcile",
+      "input": "ReviewAction",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.forward",
+      "input": "ReviewAction",
+      "output": "PromptReceipt",
+      "actor": "user",
+      "requirement": "FR-010"
     }
   ]
 }

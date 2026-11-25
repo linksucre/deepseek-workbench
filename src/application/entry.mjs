@@ -5,7 +5,7 @@ import { mountWorkbenchHost } from './host-runtime.mjs'
 import { installReviewerIsolation } from '../harness/bounded-review.mjs'
 import { mountWorkbenchPage } from '../web/host-page.mjs'
 
-export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery', 'tools']
+export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery', 'tools', 'agents', 'subagents']
 
 export async function apply(ctx, config) {
   // The overlay generator pins this local module to the verified Harness build.

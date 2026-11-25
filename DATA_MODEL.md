@@ -13,3 +13,5 @@ Decision 可以附带 reviewEvidence。每条用户确认绑定已发布 Submiss
 对话是只读原生投影。工作台不复制正文到任务存储，不传内部推理、工具结果或系统指令。PromptReceipt 只证明会话接受消息。原生消息事件持有派生请求 ID，作为跨重启重放依据。
 
 UsageSummary 可附部署侧 softBudget，包含十进制金额、币种及比较结果。预算仅用于展示，费率与预算来自独立本地配置，不写入任务或会话。
+
+ReviewRecord 是独立审阅投影，绑定 Run 和 Host 预留的子会话 ID。状态为 reserved、completed 或 incomplete。请求人与操作摘要存于内部记录，所选材料只写入原生子会话。仅有已确认亲缘关系的子会话记入 Run，其第一轮的截止游标用于缩小用量范围。

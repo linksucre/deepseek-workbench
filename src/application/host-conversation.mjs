@@ -74,6 +74,7 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
   }
 
   return {
+    exclusive,
     async read(principal, input) {
       const detail = await app.get(principal, input.taskId)
       const sessionId = (currentRun(detail) ?? detail.runs.at(-1))?.rootSessionId
@@ -125,6 +126,9 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
         if (detail.task.revision !== input.expectedRevision) throw stale()
         if (!allowed[action].includes(detail.task.status)) {
           throw new TaskError('INVALID_TRANSITION', 'Task state cannot change this way')
+        }
+        if (action !== 'resume' && record.reviews.some(review => review.status === 'reserved')) {
+          throw new TaskError('RECONCILIATION_REQUIRED', 'Resolve the pending review before ending the run')
         }
         const sessionId = currentRun(detail)?.rootSessionId
         if (action === 'resume') {

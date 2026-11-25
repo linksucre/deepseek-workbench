@@ -15,3 +15,5 @@
 待核对状态允许记录宿主启动回执并增加 revision，状态保持 blocked。工作区、会话和回执的归属由应用服务及宿主适配核验。
 
 用户可以在接受时逐项确认 Submission 的验收条件。确认随 Decision append，原 Submission 不被改写。确认不抵消可信的失败记录。
+
+独立审阅仅在活动 Run 预留。完成事件校验同一 Run，在 active 或 review 接收 Host 验证的子会话 ID。Host 和存储回执负责原生亲缘核验及跨重启去重。

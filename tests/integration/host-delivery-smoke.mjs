@@ -105,7 +105,6 @@ async function start(probe = {}) {
     env: {
       ...process.env, DSH_HOME: join(root, 'dsh'), DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
-      WORKBENCH_TEST_REVIEW: '1',
       ...probe,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -128,13 +127,6 @@ async function start(probe = {}) {
     const { result: envelope } = await result.json()
     assert.equal(envelope.ok, true, JSON.stringify(envelope.error))
     return envelope.value
-  }
-  rpc.review = async input => {
-    const response = await fetch(`${origin}/workbench/test/review`, {
-      method: 'POST', signal: AbortSignal.timeout(20_000),
-      headers: { 'content-type': 'application/json', origin, cookie }, body: JSON.stringify(input),
-    })
-    return { status: response.status, data: await response.json() }
   }
   rpc.page = path => fetch(`${origin}${path}`, { headers: { cookie } })
   rpc.workbench = async (operation, input, options = {}) => {
@@ -331,7 +323,7 @@ try {
   assert.deepEqual(accepted.decisions.map(record => record.verdict), ['return', 'accept'])
   assert.equal(accepted.decisions[1].reviewEvidence[0].criterionId, 'facts')
   await stop()
-  rpc = await start()
+  rpc = await start({ WORKBENCH_TEST_REVIEW_RECEIPT_FAULT: '1' })
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
   const beforeUsage = allModelRequests
   const incomplete = await rpc.workbench('task.usage', { taskId: draft.task.id })
@@ -354,27 +346,81 @@ try {
     requestId: 'parent-history', text: 'parent-only history marker' })
   await until(async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
-  const reviewInput = { sessionId: parentId, workspaceId: workspace.workspaceId, childId: `session-${randomUUID()}`,
+  const reviewInput = { taskId: fresh.task.id, expectedRevision: freshActive.task.revision, requestId: 'review',
     instruction: 'Check the selected brief', material: 'review isolation probe' }
-  assert.equal((await rpc.review({ ...reviewInput, deny: true })).status, 404)
-  const reviewing = rpc.review(reviewInput)
+  await rpc.workbench('task.delegate', reviewInput, { anonymous: true, status: 401 })
+  await rpc.workbench('task.delegate', { ...reviewInput, taskId: randomUUID() }, { status: 404 })
+  await rpc.workbench('task.delegate', { ...reviewInput, material: '材'.repeat(9000) }, { status: 400 })
+  await rpc.workbench('task.delegate', { ...reviewInput, childSessionId: parentId }, { status: 400 })
+  const beforeReview = await rpc.workbench('task.usage', { taskId: fresh.task.id })
+  const reviewing = rpc.workbench('task.delegate', reviewInput)
+  let reserved
   try {
     await until(() => reviewRequest, 'restricted reviewer model request')
     assert.deepEqual(reviewRequest.tools ?? [], [])
     assert.match(JSON.stringify(reviewRequest.system), /independent reviewer/i)
     assert.doesNotMatch(JSON.stringify(reviewRequest.messages), /parent-only history marker/)
-    assert.equal((await rpc.review({ ...reviewInput, childId: `session-${randomUUID()}` })).status, 409)
+    const pendingReviews = await rpc.workbench('task.reviews', { taskId: fresh.task.id })
+    reserved = pendingReviews.items[0]
+    assert.equal(reserved.status, 'reserved')
+    assert.deepEqual(await rpc.workbench('task.delegate', reviewInput), reserved)
+    const pending = await rpc.workbench('task.get', { taskId: fresh.task.id })
+    const expectedRevision = pending.task.revision
+    await rpc.workbench('task.delegate', { ...reviewInput, expectedRevision, requestId: 'concurrent-review' }, { status: 409 })
+    await rpc.workbench('task.pause', { taskId: fresh.task.id, expectedRevision, requestId: 'pending-pause' }, { status: 409 })
+    await rpc.workbench('task.review.reconcile', {
+      taskId: fresh.task.id, expectedRevision, requestId: 'running-reconcile', reviewId: reserved.reviewId,
+    }, { status: 409 })
   } finally {
     releaseReview()
   }
   const review = await reviewing
-  assert.equal(review.status, 200, JSON.stringify(review.data))
-  assert.deepEqual(review.data, { childSessionId: reviewInput.childId, outcome: 'completed', summary: 'independent review',
-    origin: 'subagent', parentSession: parentId, agentPreset: 'task-reviewer' })
+  assert.deepEqual(review, { ...reserved, status: 'completed', summary: 'independent review' })
+  const reviewedTask = await rpc.workbench('task.get', { taskId: fresh.task.id })
+  assert.deepEqual(reviewedTask.runs[0].childSessionIds, [review.childSessionId])
+  const afterReview = await rpc.workbench('task.usage', { taskId: fresh.task.id })
+  assert.equal(afterReview.completeness, 'complete')
+  assert.equal(afterReview.buckets[0].uncachedInput, beforeReview.buckets[0].uncachedInput + 4)
+  assert.equal(afterReview.buckets[0].output, beforeReview.buckets[0].output + 1)
+  const forward = { taskId: fresh.task.id, expectedRevision: reviewedTask.task.revision,
+    requestId: 'forward-review', reviewId: review.reviewId }
+  const beforeForward = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 30 })
+  assert.ok(!beforeForward.messages.some(message => message.text.includes('independent review')))
+  assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
+  await until(async () => {
+    const state = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 30 })
+    return !state.running && state.messages.some(message => message.role === 'user' && message.text.includes('independent review'))
+  }, 'owner forwarded the review into the root conversation')
 
+  const beforeForwardReplay = allModelRequests
+  assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
+  assert.equal(allModelRequests, beforeForwardReplay)
+  const recoveryInput = { ...reviewInput, expectedRevision: reviewedTask.task.revision,
+    requestId: 'lost-review-receipt', material: 'review recovery probe' }
+  await rpc.workbench('task.delegate', recoveryInput, { status: 503 })
+  const pendingReviews = (await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items
+  assert.deepEqual(pendingReviews.map(item => item.status), ['completed', 'reserved'])
+  const recoverable = pendingReviews[1]
+  const beforeRestart = await rpc.workbench('task.get', { taskId: fresh.task.id })
+  assert.deepEqual(beforeRestart.runs[0].childSessionIds, [review.childSessionId])
   const knownIds = new Set((await rpc('session/list', {})).items.map(item => item.sessionId))
   await stop()
   rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
+  const beforeReplay = allModelRequests
+  assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [review, recoverable])
+  assert.deepEqual(await rpc.workbench('task.delegate', recoveryInput), recoverable)
+  const reconcile = { taskId: fresh.task.id, reviewId: recoverable.reviewId,
+    expectedRevision: beforeRestart.task.revision, requestId: 'recover-review' }
+  const recovered = await rpc.workbench('task.review.reconcile', reconcile)
+  assert.deepEqual(recovered, { ...recoverable, status: 'completed', summary: 'done' })
+  assert.deepEqual(await rpc.workbench('task.review.reconcile', reconcile), recovered)
+  const resumedTask = await rpc.workbench('task.get', { taskId: fresh.task.id })
+  assert.deepEqual(resumedTask.runs[0].childSessionIds, [review.childSessionId, recovered.childSessionId])
+  assert.deepEqual(await rpc.workbench('task.delegate', reviewInput), review)
+  await rpc.workbench('task.delegate', { ...reviewInput, material: 'different' }, { status: 400 })
+  await rpc.workbench('task.delegate', { ...reviewInput, expectedRevision: resumedTask.task.revision,
+    requestId: 'over-review-limit' }, { status: 409 })
+  assert.equal(allModelRequests, beforeReplay)
   const uncertain = await rpc.workbench('task.create', { ...brief, requestId: 'lost-receipt-task' })
   await rpc.workbench('task.ready', { taskId: uncertain.task.id, requestId: 'ready', expectedRevision: 0 })
   const lostStart = { taskId: uncertain.task.id, requestId: 'start', expectedRevision: 1 }
@@ -404,7 +450,7 @@ try {
     content: [{ type: 'text', text: unboundMarker }] })
   const names = await until(() => unboundToolNames, 'unbound model tool catalog')
   assert.ok(!names.some(name => name.startsWith('workbench_')))
-  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, native suggestion, presentation, submission, drift, return, persisted acceptance and isolated native review.')
+  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, native suggestion, presentation, submission, drift, return, persisted acceptance and isolated native review with receipt recovery.')
 } finally {
   await stop()
   provider.closeAllConnections()

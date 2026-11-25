@@ -5,6 +5,7 @@ import { createHostReview } from './host-review.mjs'
 import { mountWorkbenchTools } from './host-tools.mjs'
 import { createHostTaskUsage } from '../usage/host-usage.mjs'
 import { createUsagePolicy } from '../usage/usage-policy.mjs'
+import { createHostDelegation } from './host-delegation.mjs'
 import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
@@ -84,6 +85,10 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     app, repository, sessionController: ctx.sessionController,
     sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
   })
+  const delegation = createHostDelegation({
+    app, repository, conversation, workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,
+    agents: ctx.agents, subagents: ctx.subagents,
+  })
   const policy = createUsagePolicy(usagePolicy)
   const usage = createHostTaskUsage({
     workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,
@@ -109,6 +114,10 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     'task.choose': input => app.choose(owner, input),
     'task.start': input => lifecycle.start(owner, input),
     'task.reconcile': input => lifecycle.reconcile(owner, input),
+    'task.delegate': input => delegation.delegate(owner, input),
+    'task.reviews': input => delegation.list(owner, input),
+    'task.review.reconcile': input => delegation.reconcile(owner, input),
+    'task.review.forward': input => delegation.forward(owner, input),
     'task.conversation': input => conversation.read(owner, input),
     'task.prompt': input => conversation.prompt(owner, input),
     'task.pause': input => conversation.transition(owner, input, 'pause'),

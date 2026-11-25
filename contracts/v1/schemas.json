@@ -1383,6 +1383,137 @@
         "pendingInput",
         "messages"
       ]
+    },
+    "DelegateReview": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "material": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24576
+        }
+      },
+      "required": [
+        "taskId",
+        "requestId",
+        "expectedRevision",
+        "instruction",
+        "material"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewAction": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/TaskId"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reviewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "taskId",
+        "requestId",
+        "expectedRevision",
+        "reviewId"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewRecord": {
+      "type": "object",
+      "properties": {
+        "reviewId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "childSessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "status": {
+          "enum": [
+            "reserved",
+            "completed",
+            "incomplete"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "reviewId",
+        "runId",
+        "childSessionId",
+        "instruction",
+        "status",
+        "summary",
+        "createdAt"
+      ],
+      "additionalProperties": false
+    },
+    "ReviewList": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReviewRecord"
+          }
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": false
     }
   }
 }

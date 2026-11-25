@@ -179,6 +179,18 @@ export function evolveTask(detail, command, { expectedRevision, now }) {
       stateOf(task, 'ready', 'paused')
       task.status = 'blocked'
       break
+    case 'reserve-review':
+      stateOf(task, 'active')
+      break
+    case 'finish-review': {
+      stateOf(task, 'active', 'review')
+      const run = activeRun(next)
+      invalid(run.id === command.runId, 'Review run is no longer active')
+      if (command.verifiedChild && !run.childSessionIds.includes(command.verifiedChild)) {
+        next.runs[next.runs.indexOf(run)] = { ...run, childSessionIds: [...run.childSessionIds, command.verifiedChild] }
+      }
+      break
+    }
     case 'record-start-receipt':
       stateOf(task, 'blocked')
       break
