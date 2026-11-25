@@ -38,8 +38,10 @@ TST-010 从 `8fde87b` 的旧插件写入真实原生回送及普通对话，然�
 
 ## 候选 `1b3d2c4` 发布核验
 
+本地合入预演 `7ef91f3` 保持候选代码、依赖和测试不变。在固定 Harness `5bff262ae7` 上，使用从独立 npm 归档安装的生成器通过 Chromium 流程，并通过原生 worktree 写隔离与冲突保留试验。重开原生 JSON 存储后，核对 3000 条任务的 60 页及最终游标。Apple M1 Max、Node 24.22.3 上 50 次首页热读的应用层 p95 为 8.00 ms。本轮浏览器使用本地模拟模型。
+
 - **AC-010 / TST-010**。独立回归 `13a7a4c` 在固定 Harness 的真实 Host 上重启后，用最新 revision 和新请求 ID 回送同一审阅。请求成功，新增一条原生消息和一次模拟模型调用，revision 增加 2，任务记录字节改变。修复后验证新 ID 冲突且无写入，原 ID 仍能核对，原请求结算后才允许另发。[回送设计评审](https://github.com/linksucre/deepseek-workbench/pull/1)
 - **AC-013 / TST-007**。独立回归 `feaff2b` 在任务域挂载后放入由原生后端生成的有效 V1 文件。逻辑创建成功并覆盖原文件。修复后验证创建拒绝、原字节不变、重新挂载可读取原任务和回执，正常更新继续可用。[存储设计评审](https://github.com/linksucre/deepseek-workbench/pull/3)
-- **公共契约**。原 v1 的提交输入与候选不兼容，旧的严格解码器也拒绝带验收证据或软预算新字段的响应。本地设计稿 `490c0de` 记录 14 组双向验证和版本迁移方案。维护者需批准版本及旧入口处理方式，同时完成资料、审阅和存储设计评审。[API 契约](API_SPEC.md) · [资料接口评审](https://github.com/linksucre/deepseek-workbench/pull/2)
+- **公共契约**。原 v1 的提交输入与候选不兼容，旧的严格解码器也拒绝带验收证据或软预算新字段的响应。本地设计稿 `490c0de` 记录 14 组双向验证和版本迁移方案。资料接口设计已通过两项远端 CI 并合入 `main` 的 `fbd64dd`。接口实现仍需随整体版本决策合入，审阅和存储设计也待评审。[API 契约](API_SPEC.md) · [资料接口评审](https://github.com/linksucre/deepseek-workbench/pull/2)
 - **远端 CI**。候选 PR #6 的仓库门禁通过。Harness 集成尝试检出 `5bff262ae7f431f6a75cc1d4d7f52527d6e55727` 三次，均收到 `not our ref`，未执行构建和产品测试。M0 门禁在公开 Harness 上的检查通过并合入 `main`，其结果仅覆盖 M0。候选需从已批准、远端可检出的固定来源构建，并在同一发布提交上通过完整 CI。[候选失败日志](https://github.com/linksucre/deepseek-workbench/actions/runs/45653564770/job/139344148739) · [M0 门禁 PR](https://github.com/linksucre/deepseek-workbench/pull/4)
 - **真实任务**。原生技能复用、用户改选和冷读的模拟预检通过。TST-005 仍需任务所有者授权使用工作区、模型和费用范围，执行四种真实模型任务，按项保存提交、决定、用量和人工复核证据。[试跑手册](docs/design/M1-REAL-TASK-ACCEPTANCE.md)
