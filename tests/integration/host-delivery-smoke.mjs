@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const checkout = resolve(process.argv[2] ?? '.')
@@ -23,7 +23,8 @@ let forgedResult
 let releaseForged
 const forgedGate = new Promise(resolve => { releaseForged = resolve })
 const forgedToolId = 'workbench-forged-evidence-probe'
-let concurrentPresentation = false
+let ownerPresentationCount = 0
+const ownerPresentationFiles = ['first.md', 'second.md']
 const submitMarker = 'Workbench owner submission concurrency probe'
 let allModelRequests = 0
 let reviewRequest
@@ -62,10 +63,10 @@ const provider = createServer(async (request, response) => {
     const omitCacheUsage = step === 6 || messages.includes('review recovery probe')
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
-    const manualPresentation = !concurrentPresentation && body.tools?.some(tool => tool.name === 'present') &&
-      JSON.stringify(body.messages).includes(submitMarker)
-    if (manualPresentation) concurrentPresentation = true
-    const filename = manualPresentation ? 'first.md' : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
+    const manualPresentation = ownerPresentationCount < ownerPresentationFiles.length &&
+      body.tools?.some(tool => tool.name === 'present') && messages.includes(submitMarker)
+    const filename = manualPresentation
+      ? ownerPresentationFiles[ownerPresentationCount++] : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
     const name = suggest ? 'workbench_suggest'
       : filename ? 'present' : [3, 4, 7].includes(step) ? 'workbench_submit' : undefined
     const forged = step === 3
@@ -78,9 +79,11 @@ const provider = createServer(async (request, response) => {
       message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(!omitCacheUsage && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (name) {
+      const callId = forged ? forgedToolId : manualPresentation
+        ? `tool-owner-present-${ownerPresentationCount}` : `tool-${name}-${step}`
       events.push(
         { type: 'content_block_start', index: 0,
-          content_block: { type: 'tool_use', id: forged ? forgedToolId : `tool-${name}-${step}`, name, input: {} } },
+          content_block: { type: 'tool_use', id: callId, name, input: {} } },
         { type: 'content_block_delta', index: 0,
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
@@ -566,10 +569,18 @@ try {
   const ownerStage = await rpc.workbench('task.get', { taskId: fresh.task.id })
   await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
     requestId: 'owner-presentation', text: submitMarker })
-  await until(async () => concurrentPresentation && (await rpc('session/list', {})).items.some(item =>
-    item.sessionId === parentId && !item.running), 'owner submission presentation committed')
+  const presentations = await until(async () => {
+    const state = await rpc('session/state', { sessionId: parentId })
+    if (state.running || state.queue?.length !== 0) return
+    const page = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 30 })
+    const events = page.records.map(record => record.event).filter(event => event.type === 'deliverables/presented')
+    if (events.length >= ownerPresentationFiles.length) return events
+  }, 'both owner submission presentations committed')
+  assert.deepEqual(presentations.map(event => event.data.files.map(file => basename(file.path))),
+    [['first.md'], ['second.md']])
+  assert.ok(presentations[0].seq < presentations[1].seq)
   const submit = { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
-    requestId: 'owner-submit', selection: 'latest-presentation' }
+    requestId: 'owner-submit', selection: 'files', paths: ['first.md'] }
   const [singleSubmission, sameSubmission] = await Promise.all([
     rpc.workbench('task.submit', submit), rpc.workbench('task.submit', submit),
   ])
@@ -577,8 +588,16 @@ try {
   assert.equal(singleSubmission.task.revision, ownerStage.task.revision + 1)
   assert.equal(singleSubmission.submissions.length, 1)
   assert.equal(singleSubmission.artifacts.length, 1)
-  assert.equal((await rpc.workbench('task.submit', { ...submit, selection: 'files', paths: ['first.md'] },
-    { status: 400 })).code, 'INVALID')
+  const [selectedFile] = singleSubmission.artifacts
+  assert.equal(selectedFile.locator, await realpath(join(root, 'first.md')))
+  assert.equal(selectedFile.versionKind, 'sha256')
+  assert.equal(selectedFile.version, hash('draft'))
+  assert.equal(selectedFile.source.kind, 'session-event')
+  assert.deepEqual(JSON.parse(selectedFile.source.locator), [parentId, presentations[0].seq, 0])
+  assert.deepEqual(singleSubmission.submissions[0].artifactIds, [selectedFile.id])
+  const changedSubmit = { ...submit, paths: ['second.md'] }
+  assert.equal((await rpc.workbench('task.submit', changedSubmit, { status: 400 })).code, 'INVALID')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), singleSubmission)
   const approve = { taskId: fresh.task.id, expectedRevision: singleSubmission.task.revision,
     submissionId: singleSubmission.task.currentSubmissionId, verdict: 'accept', reason: null,
     confirmedCriteria: ['facts'] }
@@ -634,6 +653,7 @@ try {
   assert.equal((await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 50 })).sessionId, sessionId)
   assert.equal(allModelRequests, beforeRollback)
   assert.deepEqual(await rpc.workbench('task.submit', submit), singleSubmission)
+  assert.equal((await rpc.workbench('task.submit', changedSubmit, { status: 400 })).code, 'INVALID')
   assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), oneDecision)
   const interrupted = await rpc.workbench('task.create', { ...brief, requestId: 'interrupted-after-reservation' })
   const interruptedReady = await rpc.workbench('task.ready', {
