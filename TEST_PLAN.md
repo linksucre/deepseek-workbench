@@ -12,7 +12,7 @@
 | TST-008 | 列表性能与界面 | [分页基准](tests/integration/list-performance.mjs) 写入 3000 条任务并重开原生后端，采样 50 次热读 50 条并记录 p95、环境和样本；[真实浏览器双链路](tests/integration/browser-workbench.mjs) 验证会话对话、材料漂移、退回及再次接受，覆盖 390px 小屏、键盘、会话跳转、8192 字符目标及真实用户确认与合成证据的分类展示 |
 | TST-009 | 工程规范 | 自动校验文档、唯一编号、追踪覆盖、任务依赖及契约引用，PR 检查敏感目录的文档变更；元模式与工具缺失均有负例回归 |
 | TST-010 | 多 Agent 协作 | [原生 Host 审阅隔离](tests/integration/host-delivery-smoke.mjs) 验证默认须用户派发、无工具及父上下文继承、授权、并发限制、原生完成但尚未入账时重启恢复、显式回送（含审阅 ID 和核查提示）及子会话用量（含重启后缺报）。由 [浏览器验收](tests/integration/browser-workbench.mjs) 验证 UI 派发与回送；[worktree 试验](tests/integration/worktree-isolation-smoke.mjs) 验证本地写隔离、共享 Git 元数据拒绝和冲突保留 |
-| TST-011 | 上下文索引 | [上下文冒烟](tests/integration/context-smoke.mjs) 验证来源、日期、过期提示及重启，覆盖读取中移除工作区、解除会话绑定与释放观测租约；[Host](tests/integration/host-delivery-smoke.mjs) 验证同源认证、任务范围、原生提交版本及不调用模型；[浏览器](tests/integration/browser-workbench.mjs) 验证录入、按需读取、纯文本预览及退回后交接 |
+| TST-011 | 上下文索引 | [上下文冒烟](tests/integration/context-smoke.mjs) 验证来源、日期、过期提示及重启，覆盖读取中移除工作区、解除会话绑定与释放观测租约；[Host](tests/integration/host-delivery-smoke.mjs) 验证同源认证、任务范围、归档用户与助手消息、原生提交版本及不调用模型；[浏览器](tests/integration/browser-workbench.mjs) 验证录入、保留原文件名及日期、按需读取、网址校验、纯文本预览及退回后交接 |
 | TST-012 | M1 首条集成验收 | [评审场景](docs/design/M1-RECOVERY-AND-SUBMISSION.md)，使用真实 Host 和模拟模型，覆盖预留 ID、重启、挂载、用户覆盖、提交选择、漂移、退回与再次接受 |
 
 本地 M0 门禁先运行 `npm ci`，再运行 `npm run check` 和 `npm run test:smoke -- /path/to/built/deepseek-harness`。CI 从固定提交构建上游，运行相同集成脚本。真实模型试跑属于 M1 验收，单独保存脱敏证据。失败应记范围、复现、预期及实际，避免把跳过写成通过。

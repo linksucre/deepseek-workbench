@@ -120,6 +120,7 @@ try {
   await writeFile(join(workspace, 'materials.md'), 'Initial version')
   const briefText = '<handoff>先核对材料，再形成报告。</handoff>'
   await writeFile(join(workspace, 'brief.md'), briefText)
+  await writeFile(join(workspace, ' report.md '), '保留文件名空格')
   await writeFile(join(workspace, 'report.json'), '{broken')
   await writeFile(evidencePolicy, JSON.stringify([{
     workspace: await realpath(workspace), taskTitle: checkedTitle, criterionId: 'criterion-1',
@@ -223,7 +224,12 @@ try {
     if (created) {
       const original = (await (await created).json()).result.task.materials
       await activate(button('编辑任务'))
-      assert.equal(await page.getByLabel(/资料来源/).inputValue(), materials)
+      const input = page.getByLabel(/资料来源/)
+      assert.equal(await input.inputValue(), materials)
+      await input.fill(`${materials}\nhttps://example.test/path part`)
+      await activate(button('保存任务'))
+      await page.getByRole('alert').filter({ hasText: '请输入不含空格或登录信息' }).waitFor()
+      await input.fill(materials)
       const edited = onSave('task.updateBrief')
       await activate(button('保存任务'))
       assert.deepEqual((await (await edited).json()).result.task.materials, original)
@@ -327,14 +333,15 @@ try {
   await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
   await page.getByText(/估算费用：CNY 0\./).waitFor()
 
-  const referenceUrl = 'https://example.test/reference'
-  await create('browser material task', 'documents', { goal: longGoal, materials: `brief.md\n${referenceUrl}` })
+  const referenceUrl = 'https://example.test/path%20part'
+  await create('browser material task', 'documents', { goal: longGoal, materials: `brief.md\n report.md \n${referenceUrl}` })
   await waitReview()
   assert.deepEqual(contextReads, [])
   const library = page.locator('.task-context')
   await activate(library.locator('summary'))
   await button('预览 brief.md').waitFor()
   assert.deepEqual(contextReads, ['task.context.index'])
+  await page.getByRole('button', { name: /预览\s+report\.md/ }).waitFor()
   await activate(button('预览 brief.md'))
   const preview = library.locator('.context-preview')
   await preview.getByText(briefText, { exact: true }).waitFor()
@@ -374,6 +381,10 @@ try {
   await page.getByRole('status').filter({ hasText: '已复制阶段交接' }).waitFor()
   assert.match(await page.evaluate(() => navigator.clipboard.readText()), /退回原因：请重新展示修改后的版本/)
   await choose('research', ['先审方向', '先查证'], '退回后先确认方向和资料来源')
+  await activate(library.locator('summary'))
+  await library.getByText('执行方式：先审方向、先查证', { exact: true }).waitFor()
+  await button('预览 brief.md').click()
+  await preview.getByText(briefText, { exact: true }).waitFor()
   await activate(button('填入任务说明'))
   const materialPrompt = page.getByLabel('发给 Agent')
   assert.match(await materialPrompt.inputValue(), /用户选定.*先审方向、先查证/)
