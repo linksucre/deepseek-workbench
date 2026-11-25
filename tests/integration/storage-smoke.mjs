@@ -99,6 +99,35 @@ try {
     assert.equal(await readFile(recordPath(directory), 'utf8'), contents)
   }
 
+  const unreadable = join(temp, 'unreadable')
+  await cp(backup, unreadable, { recursive: true })
+  const unreadablePath = recordPath(unreadable)
+  await rm(unreadablePath)
+  // A directory at the record path fails reads even for a privileged test user.
+  await mkdir(unreadablePath)
+  const diagnosticMarker = join(unreadablePath, 'preserve.txt')
+  await writeFile(diagnosticMarker, 'Unchanged fixture')
+  await assert.rejects(useStorage(unreadable, () => assert.fail('unreadable task domain opened')),
+    { code: 'malformed-medium' })
+  assert.equal(await readFile(diagnosticMarker, 'utf8'), 'Unchanged fixture')
+
+  const damagedAfterOpen = join(temp, 'damaged-after-open')
+  await cp(backup, damagedAfterOpen, { recursive: true })
+  const clearIntent = repo => repo.commit(id, { request: request('clear-intent'), expectedRevision: 2 }, input => ({
+    ...input,
+    detail: evolveTask(input.detail, { kind: 'clear-block' }, { expectedRevision: 2, now }),
+    pendingIntent: null,
+  }))
+  const damagedContents = '{"version":1,"record":'
+  await useStorage(damagedAfterOpen, async repo => {
+    await writeFile(recordPath(damagedAfterOpen), damagedContents)
+    await assert.rejects(clearIntent(repo), { code: 'malformed-medium' })
+    assert.equal(await readFile(recordPath(damagedAfterOpen), 'utf8'), damagedContents)
+    assert.deepEqual(await repo.exportSnapshot(), exported)
+  })
+  await assert.rejects(useStorage(damagedAfterOpen, () => assert.fail('reopen accepted the damaged record')),
+    { code: 'malformed-medium' })
+
   const collision = join(temp, 'key-appears')
   await cp(backup, collision, { recursive: true })
   const newId = '01882e02-360d-4d75-bee7-4b8b0dd34b2b'
@@ -116,8 +145,22 @@ try {
 
   const restored = join(temp, 'restored')
   await cp(backup, restored, { recursive: true })
-  await useStorage(restored, async repo => assert.deepEqual(await repo.exportSnapshot(), exported))
-  console.log('PASS: native storage revision and replay, legacy V1 migration, strict corrupted-record protection, and clean backup restore.')
+  await useStorage(restored, async repo => {
+    assert.deepEqual(await repo.exportSnapshot(), exported)
+    const cleared = await clearIntent(repo)
+    assert.equal(cleared.task.revision, 3)
+    assert.equal(repo.read(id).pendingIntent, null)
+    assert.deepEqual(await clearIntent(repo), cleared)
+  })
+  await useStorage(restored, async repo => {
+    const current = repo.read(id)
+    assert.equal(current.detail.task.revision, 3)
+    assert.equal(current.pendingIntent, null)
+    assert.deepEqual(await clearIntent(repo), current.detail)
+  })
+  await useStorage(backup, async repo => assert.deepEqual(await repo.exportSnapshot(), exported))
+  assert.equal(await readFile(recordPath(damagedAfterOpen), 'utf8'), damagedContents)
+  console.log('PASS: native storage revision and replay, legacy V1 migration, rejection of unreadable and damaged records, and clean backup recovery with retry.')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }
