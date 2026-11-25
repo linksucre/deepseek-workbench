@@ -437,10 +437,15 @@ try {
   assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
   assert.equal((await rpc('session/list', {})).items.length, 2)
   const parentId = freshActive.runs[0].rootSessionId
+  const parentHistory = 'parent-only history marker'
   await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: freshActive.task.revision,
-    requestId: 'parent-history', text: 'parent-only history marker' })
+    requestId: 'parent-history', text: parentHistory })
   await until(async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
+  const parentConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 20 })
+  const parentMessage = parentConversation.messages.find(item => item.role === 'user' && item.text === parentHistory)
+  assert.equal(parentConversation.sessionId, parentId)
+  assert.ok(Number.isSafeInteger(parentMessage?.seq))
   const reviewParent = await rpc.workbench('task.get', { taskId: fresh.task.id })
   assert.deepEqual(reviewParent.runs[0].childSessionIds, [])
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
@@ -656,10 +661,15 @@ try {
   const archivedSources = archivedMessages.map(item =>
     ({ kind: 'session-event', locator: JSON.stringify([sessionId, item.seq]), observedAt }))
   const unrelatedSource = { ...archivedSources[0], locator: JSON.stringify([randomUUID(), archivedMessages[0].seq]) }
+  const otherTaskSource = { ...archivedSources[0], locator: JSON.stringify([parentId, parentMessage.seq]) }
   const toolSource = { ...archivedSources[0], locator: JSON.stringify([sessionId, samples[0].toolResultSeq]) }
-  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, toolSource)
+  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, otherTaskSource, toolSource)
   await writeFile(archivedTaskFile, JSON.stringify(archived))
   rpc = await start({}, { dataHome: archive })
+  assert.equal(fresh.task.workspaceId, archived.record.detail.task.workspaceId)
+  const otherTaskConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 50 })
+  assert.equal(otherTaskConversation.sessionId, parentId)
+  assert.deepEqual(otherTaskConversation.messages.find(item => item.seq === parentMessage.seq), parentMessage)
   const archivedContext = await rpc.workbench('task.context.index', { taskId })
   assert.deepEqual(archivedContext.sources.filter(entry => entry.origins.includes('brief') &&
     entry.source.kind === 'session-event' && entry.source.locator !== toolSource.locator)
@@ -669,6 +679,7 @@ try {
       { kind: 'message', role: archivedMessages[index].role, text: archivedMessages[index].text })
   }
   await rpc.workbench('task.context.load', { taskId, source: unrelatedSource }, { status: 404 })
+  await rpc.workbench('task.context.load', { taskId, source: otherTaskSource }, { status: 404 })
   await rpc.workbench('task.context.load', { taskId, source: toolSource }, { status: 404 })
   assert.equal(allModelRequests, beforeRollback)
   await stop()
