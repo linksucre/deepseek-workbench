@@ -49,4 +49,8 @@ jobs:
         run: |
           corepack pnpm install --frozen-lockfile
           corepack pnpm run build
+      - run: npm ci
       - run: npm run test:smoke -- "$GITHUB_WORKSPACE/upstream"
+      - run: node tests/integration/storage-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - run: node tests/integration/application-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream"
