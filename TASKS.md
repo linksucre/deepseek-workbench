@@ -7,7 +7,7 @@
 | DEV-001 | FR-001 | src/preset | — | done | 预设及模拟模型集成通过，逐项断言必需工具 |
 | DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、元模式验证、负例回归与 PR 流程 |
 | DEV-003 | FR-002 | src/domain | DEV-002 | done | 纯状态机、领域测试与契约校验 |
-| DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | planned | 兼容试验、会话绑定、授权及故障恢复 |
+| DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | active | 兼容试验、会话绑定、授权及故障恢复 |
 | DEV-005 | NFR-003 | src/storage | DEV-003 | planned | 数据域、幂等回执、备份与恢复测试 |
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | planned | 用例、冲突控制、接受退回及故障注入测试 |
 | DEV-007 | FR-005 | src/delivery | DEV-004 | planned | 原生事件、交付版本与证据校验 |
@@ -16,3 +16,5 @@
 | DEV-010 | FR-009 | src/application | DEV-006 | planned | 索引及阶段交接 |
 | DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | planned | 有限委派与冲突隔离验证 |
 | DEV-012 | — | tests/integration | DEV-006 | planned | M1 跨模块联调，先完成恢复、原生展示到提交、漂移退回及重交接受 |
+
+DEV-004 由 Codex 负责，分支为 `dev/DEV-004-harness-recovery`，范围为 `src/harness` 及对应验证。预期证据为 TST-002、TST-003 和 TST-004 中的会话归属、故障恢复及权限结果，对应 AC-004、AC-012。已开始固定 Host 的兼容检查。实现等待 DEV-003 合并及会话归属方案评审，见 [兼容检查记录](src/harness/DESIGN.md#固定-host-的兼容检查)。
