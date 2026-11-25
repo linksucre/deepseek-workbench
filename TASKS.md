@@ -30,6 +30,7 @@
 | `DEV-002` | Codex 协作 Agent | `dev/DEV-002-m3-context-combined` | 从 `223596b` 组合原协作者的 `f839868` 资料保真提交，复验原生消息和跨模块场景 |
 | `DEV-002` | Codex | `dev/DEV-002-release-review` | 基于 `97af999` 汇集待评审设计、Harness 上游差异和发布验收入口，只改评审文档 |
 | `DEV-002` | Codex | `dev/DEV-002-harness-bundle-review` | 从 `b3fbb97` 验证受保护 Harness 两提交的离线评审交接，记录精确恢复与校验步骤 |
+| `DEV-002` | Codex | `dev/DEV-002-acceptance-sync` | 基于主工作目录工单，将全部 AC 的可追溯本地证据和待验条件回填根目录验收与入口文档 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
@@ -60,6 +61,7 @@
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-workspace-selection` | 从 `8ad4e9b` 修复慢请求期间连续切换工作区造成的旧列表与详情，运行 Chromium 红绿复验 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-lifecycle-browser-verification` | 从 `99f1668` 补验真实浏览器暂停、恢复和取消入口 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-write-replay-browser` | 从 `4a8434d` 补验浏览器写入成功后丢失响应的幂等恢复 |
+| `DEV-008` | Codex 协作 Agent | `dev/DEV-008-pagination-browser` | 从 `aa97c43` 验证浏览器键盘分页、最后一页和工作区切换后的游标 |
 | `DEV-008` | Codex | `dev/DEV-008-pagination-verification` | 从 `99f1668` 补验 3000 条任务跨页同时间排序、完整遍历及现有阈值 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
