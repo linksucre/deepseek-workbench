@@ -37,6 +37,8 @@ const symlinkDirectory = fileRef('redirected/private.md')
 const binary = fileRef('binary.bin')
 const oversized = fileRef('oversized.txt')
 const messageSource = { kind: 'session-event', locator: JSON.stringify(['session-fixed-root', 1]), observedAt: now }
+const longMessage = { ...messageSource, locator: JSON.stringify(['session-fixed-root', 4]) }
+const messagePrefix = '甲'.repeat(8190)
 const presentation = { kind: 'session-event', locator: JSON.stringify(['session-fixed-root', 2, 0]), observedAt: now }
 const untrusted = { ...messageSource, locator: JSON.stringify(['session-fixed-root', 3]) }
 const unrelated = { ...messageSource, locator: JSON.stringify(['unrelated', 1]) }
@@ -55,6 +57,9 @@ const sessionQuery = {
         content: [{ type: 'text', text: 'Source discussion' }, { type: 'image', data: 'private metadata' }] } },
       { seq: 2, type: 'deliverables/presented', data: { files: [{ path: 'brief.md' }] } },
       { seq: 3, type: 'tool/result', data: { secret: 'internal data' } },
+      { seq: 4, type: 'assistant/message', data: { message: { content: [
+        { type: 'text', text: messagePrefix }, { type: 'text', text: '🧪尾' },
+      ] } } },
     ], [Symbol.dispose]() { leaseCount -= 1 } }
   },
 }
@@ -162,7 +167,7 @@ try {
     let task = await app.create(owner, {
       workspaceId: 'project', requestId: 'host-create', title: 'Host sources', goal: 'Review source access',
       materials: [reference, goodLink, badLink, escaped, symlinkFile, symlinkDirectory, binary, oversized,
-        messageSource, unrelated, presentation, untrusted],
+        messageSource, unrelated, presentation, untrusted, longMessage],
       deliverables: ['brief.md'], criteria: [{ id: 'facts', description: 'Check facts' }],
     })
     hostTaskId = task.task.id
@@ -179,7 +184,7 @@ try {
     task = await app.submit(owner, { ...input('host-submit'), selection: { selection: 'latest-presentation' } })
     hostSnapshot = await hostContext(repository, app).get(owner, hostTaskId)
     assert.deepEqual(hostSnapshot.sources.map(item => item.source),
-      [reference, goodLink, binary, oversized, messageSource, presentation, untrusted])
+      [reference, goodLink, binary, oversized, messageSource, presentation, untrusted, longMessage])
     assert.equal(sourceReads, 0)
   })
   await useStorage(storage, async repository => {
@@ -190,6 +195,12 @@ try {
     assert.deepEqual((await context.load(owner, hostTaskId, goodLink)).content, { kind: 'url', href: goodLink.locator })
     assert.deepEqual((await context.load(owner, hostTaskId, messageSource)).content,
       { kind: 'message', role: 'user', text: 'Source discussion' })
+    const preview = (await context.load(owner, hostTaskId, longMessage)).content
+    assert.equal(preview.kind, 'message')
+    assert.equal(preview.role, 'assistant')
+    assert.ok(preview.text.isWellFormed(), 'A preview must not split a character at the text limit')
+    assert.equal(preview.text, `${messagePrefix}\n🧪`)
+    assert.equal([...preview.text].length, 8192)
     const presented = (await context.load(owner, hostTaskId, presentation)).content
     assert.deepEqual(presented, { kind: 'presentation', locator: 'brief.md',
       version: createHash('sha256').update(contents).digest('hex') })

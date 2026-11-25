@@ -19,6 +19,8 @@
 
 [Harness integration](.github/workflows/ci.yml) 在 macOS 上运行上下文冒烟、原生 worktree 写入隔离试验和分页基准。worktree 试验使用临时 Git 仓库，验证两条分支的写入隔离和冲突后的结果保留。分页输出包括机器、Node 版本、样本数及 p95。浏览器使用独立安装的本地归档。
 
+TST-011 的上下文冒烟还验证多块会话文本的 8192 字符边界。换行计入长度，位于边界的 emoji 保持完整，后续文字截去。
+
 DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，也可用下列参数逐一运行：
 
 - `--review-recovery-regressions=cold-root` 先观察原生根会话确实未加载，再核对拒绝无副作用、激活后仍可派发两次。

@@ -58,9 +58,13 @@ function eventContent(events, location, detail, source) {
     if (block.type !== 'text') continue
     if (lines.length) remaining -= 1
     if (remaining <= 0) break
-    const text = block.text.slice(0, remaining)
-    lines.push(text)
-    remaining -= text.length
+    let end = 0
+    for (const character of block.text) {
+      end += character.length
+      remaining -= 1
+      if (remaining === 0) break
+    }
+    lines.push(block.text.slice(0, end))
   }
   return { kind: 'message', role: user ? 'user' : 'assistant', text: lines.join('\n') }
 }
