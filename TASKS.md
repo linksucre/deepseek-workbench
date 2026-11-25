@@ -281,4 +281,4 @@ DEV-002 `0842987` 记录 `5d63e78` 的本地评审包和独立复验。Workbench
 
 DEV-011 `1c96c9c` 在 macOS 原生 worktree 隔离专项增加路径预检。普通工作目录仍通过真实隔离与冲突保留试验；系统及用户共享临时目录、符号链接指向临时区的产物目录均在创建测试仓库前退出失败。27 项回归、仓库门禁、actionlint 通过，本地候选已更新。生产写入委派仍按 M3 设计评审。
 
-DEV-002 确认 Workbench 已配置公开 GitHub 远端，目前没有默认分支、提交分支、PR、仓库规则或 CI 记录。独立检出的本地 M0 `e252c32` 通过仓库门禁、actionlint 和真实 Host 预设冒烟，固定 M0 上游 `4b399c39a6` 可从空 Git 仓库拉取。M3 使用不同的保护版基线。首次公开推送等待确认。准备好的三个独立设计分支仅包含 Markdown，分别为 DEV-005 `061b0f7`、DEV-010 `9aa282a`、DEV-011 `0849cd7`，均通过相对 `main` 的文档门禁。
+DEV-002 确认 Workbench 已配置公开 GitHub 远端。复核期间远端 `main` 初始化为本地 M0 `e252c32`，并启用分支保护，要求一名审批人、过期评审失效、管理员同样受规则约束，以及 `Repository gate` 和 `Harness integration` 通过。独立检出的 M0 通过仓库门禁、actionlint 和真实 Host 预设冒烟，固定 M0 上游 `4b399c39a6` 可从空 Git 仓库拉取。远端 [CI 45644047839](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839) 的 `Repository gate` 已通过，`Harness integration` 仍排队。M3 的保护版基线上游返回 `not our ref`。三个独立设计分支仅包含 Markdown，分别为 DEV-005 `061b0f7`、DEV-010 `9aa282a`、DEV-011 `0849cd7`，均通过文档门禁，公开草稿 PR 待确认。
