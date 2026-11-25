@@ -55,6 +55,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-real-task-fixtures` | 从 `714357a` 准备 TST-005 的四项本地试跑材料、判定和留证说明，先验证材料可用性 |
 | `DEV-012` | Codex 协作 Agent | `dev/DEV-012-explicit-delivery-verification` | 从 `99f1668` 核对真实宿主按文件选择的成功提交、证据来源及请求重放 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
+| `DEV-011` | Codex | `dev/DEV-011-worktree-trial-path-check` | 从 `0842987` 在创建夹具前检查 macOS 原生隔离试验的路径前提，仅修改对应测试和说明 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-timeout-verification` | 从 `97af999` 补验 TST-010 审阅超时、资源清理和并发插槽释放 |
@@ -274,3 +275,5 @@ DEV-006 `6aa9aee` 修复任务对话和新结算审阅摘要的 Unicode 字符�
 DEV-002 `5d63e78` 将主工作目录的任务板状态和历史证据归档到本地候选，补齐 `6aa9aee` 的同提交验收记录。27 项回归、差异门禁、actionlint、原生存储及资料、完整 Host 审阅和独立安装的 Chromium 复验通过。候选内的任务板用于交接，主工作目录仍为协作登记入口。空 Git 仓库再次确认固定 Harness 提交在上游返回 `not our ref`，真实模型授权及维护者评审也仍待完成。
 
 DEV-002 `0842987` 记录 `5d63e78` 的本地评审包和独立复验。Workbench 全量 Git bundle、Harness 保护增量 bundle、npm 归档和校验和可从同一评审包取得。空仓库还原 Workbench，独立检出导入两个 Harness 提交并离线构建通过 10 个门禁。复验通过 27 项回归、仓库门禁、真实 Host、拒绝恢复、双版本回退、安装包 Chromium、存储、应用、资料和用量。macOS 系统共享临时目录中的 worktree 隔离未通过，普通用户工作目录通过，限制已记入部署与 M3 评审说明。分页 3000 条全部 60 页通过，首页热读 p95 6.71 ms。
+
+DEV-011 `1c96c9c` 在 macOS 原生 worktree 隔离专项增加路径预检。普通工作目录仍通过真实隔离与冲突保留试验；系统及用户共享临时目录、符号链接指向临时区的产物目录均在创建测试仓库前退出失败。27 项回归、仓库门禁、actionlint 通过，本地候选已更新。生产写入委派仍按 M3 设计评审。
