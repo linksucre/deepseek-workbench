@@ -7,7 +7,7 @@
 | TST-003 | 并发、幂等、崩溃恢复 | [应用服务接入试验](tests/integration/application-smoke.mjs) 验证原生存储和文件层的状态流转、访问检查、幂等重放和漂移；同 revision 并发写，重放相同及不同摘要；模拟启动三阶段崩溃、超时、丢失响应、重启 |
 | TST-004 | 产物及人工验收 | [交付模块回归](tests/unit/delivery.test.mjs) 验证选择范围、文件权限和重新计算版本；[原生展示联调](tests/integration/host-delivery-smoke.mjs) 验证已认证任务命令、跨源拒绝、任务跨重启、真实挂载失败后的启动重放和原 ID 复挂、实际工具调用、冷读、授权和版本变化；同一 Host 验证原生提交、退回重交、条件确认和终态复读；替换或移除文件、symlink 越界、旧提交回放、伪造工具证据 |
 | TST-005 | 真实使用与流程选择 | 开发、设计、写作、材料各一真实授权任务；覆盖直接做、先审方向、先查证、复用、用户覆盖与中途调整 |
-| TST-006 | 统计准确性 | 重复事件、缺报、未知费率、缓存、取消、根与子会话场景与可见原生统计对账 |
+| TST-006 | 统计准确性 | [原生用量](tests/integration/usage-host-smoke.mjs) 验证失败结算、可得缓存、已绑定子会话及无凭据冷读；[生产命令](tests/integration/host-delivery-smoke.mjs) 与 [浏览器](tests/integration/browser-workbench.mjs) 验证授权、费用、软预算与缺报 |
 | TST-007 | 迁移与发布 | [存储原生后端冒烟](tests/integration/storage-smoke.mjs) 验证备份、重开、并发 revision 与重放；另覆盖损坏记录、停用、版本兼容；区分试运行、发布验收和回滚 |
 | TST-008 | 列表性能与界面 | [分页基准](tests/integration/list-performance.mjs) 写入 3000 条任务并重开原生后端，采样 50 次热读 50 条并记录 p95、环境和样本；[真实浏览器双链路](tests/integration/browser-workbench.mjs) 验证会话对话、材料漂移、退回及再次接受，覆盖 390px 小屏；键盘和长文本专项待补 |
 | TST-009 | 工程规范 | 自动校验文档、唯一编号、追踪覆盖、任务依赖及契约引用，PR 检查敏感目录的文档变更；元模式与工具缺失均有负例回归 |

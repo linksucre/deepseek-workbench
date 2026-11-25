@@ -13,10 +13,12 @@ const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json'
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
 const root = await mkdtemp(join(tmpdir(), 'dsh-host-delivery-'))
 const patch = join(root, 'test.patch.yml')
+const usagePolicy = join(root, 'usage-policy.json')
 const marker = 'Workbench native presentation probe'
 const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
   && JSON.stringify(body.messages).includes(marker)
 let modelSteps = 0
+let allModelRequests = 0
 let suggestionSteps = 0
 let suggestionResults = []
 let unboundToolNames
@@ -27,6 +29,7 @@ const provider = createServer(async (request, response) => {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
+    allModelRequests += 1
     if (JSON.stringify(body.messages).includes(suggestionMarker)) {
       suggestionResults = body.messages.flatMap(message => Array.isArray(message.content) ? message.content : [])
         .filter(block => block.type === 'tool_result')
@@ -44,7 +47,7 @@ const provider = createServer(async (request, response) => {
       : filename ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
-      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0 } },
+      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(step !== 5 && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (name) {
       events.push(
@@ -145,8 +148,13 @@ async function stop() {
 
 const hash = text => createHash('sha256').update(text).digest('hex')
 try {
+  await writeFile(usagePolicy, JSON.stringify({
+    rates: [{ provider: 'deepseek-official', model: 'deepseek-flash', currency: 'CNY', rateDate: '2020-01-01',
+      perMillion: { uncachedInput: '1', cacheRead: '0.2', cacheWrite: '1', output: '2' } }],
+    softBudget: { currency: 'CNY', decimalAmount: '0.000001' },
+  }))
   execFileSync(process.execPath, [
-    fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), checkout, patch,
+    fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), checkout, patch, usagePolicy,
   ])
   const module = new URL('./fixtures/delivery-probe.mjs', import.meta.url).href
   const entry = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
@@ -170,6 +178,9 @@ try {
   await rpc.workbench('task.create', brief, { origin: 'https://untrusted.example', status: 403 })
   assert.equal((await rpc.workbench('task.create', { ...brief, caller: 'owner' }, { status: 400 })).code, 'INVALID')
   const draft = await rpc.workbench('task.create', brief)
+  await rpc.workbench('task.usage', { taskId: draft.task.id }, { anonymous: true, status: 401 })
+  await rpc.workbench('task.usage', { taskId: draft.task.id }, { origin: 'https://untrusted.example', status: 403 })
+  assert.equal((await rpc.workbench('task.usage', { taskId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
   const ready = await rpc.workbench('task.ready', {
     taskId: draft.task.id, requestId: 'workbench-ready', expectedRevision: draft.task.revision,
   })
@@ -231,6 +242,13 @@ try {
   assert.equal(submitted.task.status, 'review')
   assert.equal(submitted.submissions.length, 1)
   assert.deepEqual(submitted.artifacts.map(artifact => artifact.version), [hash('version 1')])
+  const onSubmission = allModelRequests
+  const initialUsage = await rpc.workbench('task.usage', { taskId: draft.task.id })
+  assert.equal(initialUsage.completeness, 'complete')
+  assert.ok(initialUsage.estimatedCost.decimalAmount !== '0')
+  assert.equal(initialUsage.estimatedCost.currency, 'CNY')
+  assert.equal(initialUsage.softBudget.comparison, 'reached')
+  assert.equal(allModelRequests, onSubmission)
   await stop()
 
   const samples = []
@@ -245,6 +263,8 @@ try {
     })
     assert.deepEqual(await restarted.workbench('task.get', { taskId: draft.task.id }), submitted)
     assert.deepEqual(await restarted.workbench('task.create', brief), draft)
+    assert.deepEqual(await restarted.workbench('task.usage', { taskId: draft.task.id }), initialUsage)
+    assert.equal(allModelRequests, onSubmission)
     const sample = await until(async () => {
       try { return JSON.parse(await readFile(resultPath, 'utf8')) }
       catch (error) { if (error.code !== 'ENOENT') throw error }
@@ -297,6 +317,12 @@ try {
   await stop()
   rpc = await start()
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
+  const beforeUsage = allModelRequests
+  const incomplete = await rpc.workbench('task.usage', { taskId: draft.task.id })
+  assert.equal(incomplete.completeness, 'partial')
+  assert.equal(incomplete.estimatedCost, null)
+  assert.equal(incomplete.softBudget.comparison, 'unknown')
+  assert.equal(allModelRequests, beforeUsage)
   const fresh = await rpc.workbench('task.create', { ...brief, requestId: 'second-task' })
   const readyFresh = await rpc.workbench('task.ready', {
     taskId: fresh.task.id, requestId: 'ready', expectedRevision: 0,

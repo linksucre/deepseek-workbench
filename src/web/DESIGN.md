@@ -13,3 +13,5 @@
 `tests/integration/host-delivery-smoke.mjs` 使用真实部署 overlay 和 Host 验证页面权限、资源、分页和既有 M1 链路。Chromium 中验证添加工作区、创建任务、置就绪、启动会话和小屏响应式。使用 `tests/integration/list-performance.mjs` 验证重开原生 JSON 后端之后，3000 条任务的应用分页性能。
 
 [浏览器集成测试](../../tests/integration/browser-workbench.mjs) 通过实际 Web Host、原生工具和模拟模型覆盖代码与材料两条完整交付路径，包括小屏布局。CI 从安装后的本地归档生成 overlay 并运行同一测试。
+
+任务详情的 Token 与费用区域按需加载。空估算仍展示实报计数及缺报提示；只有可核验且币种一致的费用才与软预算比较。浏览器回归覆盖预算提醒与缺报。

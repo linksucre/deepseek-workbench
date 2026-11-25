@@ -80,3 +80,11 @@ textarea { resize: vertical }
 .message p { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0 0; }
 .prompt-form { display: grid; gap: .55rem; margin-top: 1rem; }
 .prompt-form textarea { width: 100%; min-width: 0; padding: .5rem; }
+.usage-content { padding: .6rem 0 0; }
+.usage-content > p { margin: .35rem 0; }
+.usage-model { margin: .8rem 0; border-top: 1px solid var(--line); padding-top: .6rem; min-width: 0; }
+.usage-model h3 { font-size: .92rem; margin: 0; overflow-wrap: anywhere; }
+.usage-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; margin: .5rem 0; }
+.usage-fields dt { font-size: .82rem; color: var(--muted); }
+.usage-fields dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.budget-warning { color: var(--warning); }

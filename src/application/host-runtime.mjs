@@ -3,6 +3,8 @@ import { TaskError } from '../domain/task.mjs'
 import { openTaskRepository } from '../storage/task-repository.mjs'
 import { createHostReview } from './host-review.mjs'
 import { mountWorkbenchTools } from './host-tools.mjs'
+import { createHostTaskUsage } from '../usage/host-usage.mjs'
+import { createUsagePolicy } from '../usage/usage-policy.mjs'
 import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
@@ -46,7 +48,7 @@ async function readBody(req) {
  * Mount the explicit local owner command carrier. The logical operation shapes
  * stay in contracts/v1. The caller supplies the pinned Host storage/schema APIs.
  */
-export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, delivery }) {
+export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, delivery, usagePolicy }) {
   if (!loopback.has(ctx.webServer.host)) throw new Error('Workbench commands require a loopback listener')
   const schema = await readJSON('../../contracts/v1/schemas.json')
   const index = await readJSON('../../contracts/v1/operations.json')
@@ -82,10 +84,26 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     app, repository, sessionController: ctx.sessionController,
     sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
   })
+  const policy = createUsagePolicy(usagePolicy)
+  const usage = createHostTaskUsage({
+    workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,
+    async loadTask(principal, taskId) {
+      await app.get(principal, taskId)
+      return repository.read(taskId)
+    },
+    canReadSession: ({ principal, task, run, sessionId }) => {
+      if (principal !== owner) return false
+      const workspace = ctx.workspaceRegistry.get(task.workspaceId)
+      return workspace?.sessionIds.includes(run.rootSessionId) === true &&
+        (sessionId === run.rootSessionId || run.childSessionIds.includes(sessionId))
+    },
+    lookupRate: policy.lookupRate,
+  })
   const methods = {
     'task.create': input => app.create(owner, input),
     'task.get': input => app.get(owner, input.taskId),
     'task.list': input => app.list(owner, input),
+    'task.usage': async input => policy.applyBudget(await usage(owner, input.taskId, { signal: AbortSignal.timeout(10_000) })),
     'task.updateBrief': input => app.updateBrief(owner, input),
     'task.ready': input => app.ready(owner, input),
     'task.choose': input => app.choose(owner, input),
