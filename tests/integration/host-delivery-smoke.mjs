@@ -274,6 +274,14 @@ try {
   assert.equal(attached.task.status, 'active')
   assert.equal(attached.runs[0].rootSessionId, sessionId)
   assert.deepEqual(await rpc.workbench('task.reconcile', attach), attached)
+  for (const changed of [
+    { ...attach, rootSessionId: 'different-root' },
+    { ...attach, expectedRevision: attach.expectedRevision + 1 },
+    { ...attach, action: 'discard-intent', rootSessionId: null },
+  ]) {
+    assert.equal((await rpc.workbench('task.reconcile', changed, { status: 400 })).code, 'INVALID')
+  }
+  assert.deepEqual(await rpc.workbench('task.get', { taskId }), attached)
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId), [sessionId])
   assert.deepEqual((await rpc('workspace/create', { path: root })).workspace.sessionIds, [sessionId])
   const idle = async () => (await rpc('session/list', {})).items.some(item =>
@@ -718,9 +726,13 @@ try {
   assert.deepEqual(await rpc.workbench('task.start', interruptedStart), pending)
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
 
-  const reset = await rpc.workbench('task.reconcile', { taskId: pending.task.id, requestId: 'discard',
-    expectedRevision: pending.task.revision, action: 'discard-intent', rootSessionId: null })
+  const discard = { taskId: pending.task.id, requestId: 'discard',
+    expectedRevision: pending.task.revision, action: 'discard-intent', rootSessionId: null }
+  const reset = await rpc.workbench('task.reconcile', discard)
   assert.equal(reset.task.status, 'ready')
+  assert.deepEqual(await rpc.workbench('task.reconcile', discard), reset)
+  assert.equal((await rpc.workbench('task.reconcile', { ...discard, action: 'attach', rootSessionId: pendingNative.sessionId },
+    { status: 400 })).code, 'INVALID')
   const retry = { taskId: reset.task.id, requestId: 'explicit-retry', expectedRevision: reset.task.revision }
   const started = await rpc.workbench('task.start', retry)
   assert.equal(started.task.status, 'active')
@@ -763,6 +775,10 @@ try {
   rpc = await start({}, { dataHome: restored })
   assert.deepEqual(await rpc.workbench('task.start', lateStart), lateBlocked)
   assert.equal((await rpc.workbench('task.reconcile', verifyLate, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  assert.deepEqual(await rpc.workbench('task.reconcile', attach), attached)
+  assert.deepEqual(await rpc.workbench('task.reconcile', discard), reset)
+  assert.equal((await rpc.workbench('task.reconcile', { ...attach, action: 'discard-intent', rootSessionId: null },
+    { status: 400 })).code, 'INVALID')
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)

@@ -3,6 +3,7 @@ import { observeBoundRootSession } from '../harness/session-observation.mjs'
 
 const nativeCreateDeadlineMs = 8_000
 const reconcile = () => new TaskError('RECONCILIATION_REQUIRED', 'Native startup requires verification')
+const reusedRequest = () => new TaskError('INVALID', 'Request ID reused with a different input')
 
 export function createHostStart({ app, repository, workspaceRegistry, sessionController, sessionQuery }) {
   const preset = 'task-collaborator'
@@ -142,17 +143,23 @@ export function createHostStart({ app, repository, workspaceRegistry, sessionCon
     reconcile(principal, input) {
       return exclusive(async () => {
         const detail = await app.get(principal, input.taskId)
+        const record = repository.read(input.taskId)
+        const attached = ownReceipt(record, principal, input, 'task.reconcile.bind')
+        const discarded = ownReceipt(record, principal, input, 'task.reconcile.discard')
         if (input.action === 'discard-intent') {
+          if (discarded) return app.discardStart(principal, input)
+          if (attached) throw reusedRequest()
           if (creating.has(input.taskId)) throw reconcile()
           return app.discardStart(principal, input)
         }
-        const record = repository.read(input.taskId)
-        const replay = ownReceipt(record, principal, input, 'task.reconcile.bind')
-        if (replay) {
-          const root = replay.result.runs.find(item => item.id === replay.result.task.activeRunId)?.rootSessionId
-          if (root !== input.rootSessionId || replay.result.task.revision !== input.expectedRevision + 1) throw reconcile()
-          return replay.result
+        if (attached) {
+          const root = attached.result.runs.find(item => item.id === attached.result.task.activeRunId)?.rootSessionId
+          if (root !== input.rootSessionId || attached.result.task.revision !== input.expectedRevision + 1) {
+            throw reusedRequest()
+          }
+          return attached.result
         }
+        if (discarded) throw reusedRequest()
         if (detail.task.revision !== input.expectedRevision) throw new TaskError('REVISION_CONFLICT', 'Task revision changed')
         const intent = record.pendingIntent
         if (!intent || input.rootSessionId !== intent.reservedSessionId) throw reconcile()
