@@ -34,4 +34,6 @@ TST-010 从 `8fde87b` 的旧插件写入真实原生回送及普通对话，然�
 
 当前行为候选 `6aa9aee` 合入备份与回执回归、资料预览、任务对话和审阅摘要的 Unicode 边界修复。使用同一 Harness 及本地模拟模型复跑 27 项回归、仓库门禁、actionlint、存储、资料、全量 Host 审阅及独立 npm 归档 Chromium，通过。工单状态和历史证据见随候选保存的 [任务板快照](TASKS.md)。
 
+候选 `5d63e78` 的 Workbench 源码与固定 Harness 均经 Git bundle 还原，SHA-256 和 Git 对象连通性校验通过。独立构建的 Harness 通过全部 10 个构建门禁，配合同包的 Workbench npm 归档通过 Chromium、真实 Host 审阅和双版本回退。系统共享临时目录中的原生 worktree 隔离未通过，同一版本在普通用户工作目录通过。评审复现步骤和路径条件见 [部署手册](docs/DEPLOYMENT.md)。
+
 发布验收仍需任务所有者授权并执行 [TST-005](docs/design/M1-REAL-TASK-ACCEPTANCE.md)，维护者评审 [资料接口](docs/design/M2-WORKBENCH-CONTEXT.md)、[审阅回执](docs/design/M3-BOUNDED-REVIEW.md) 和 [任务记录保护](docs/design/TASK-RECORD-PRESERVATION.md)。从空 Git 仓库向配置的上游拉取固定 Harness 提交 `5bff262ae7f431f6a75cc1d4d7f52527d6e55727` 仍返回 `not our ref`。正式 CI 需用已批准且可拉取的基线实际运行，并保留远端结果。

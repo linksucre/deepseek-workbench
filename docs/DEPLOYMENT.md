@@ -59,6 +59,35 @@ npm install --prefix /path/to/local-install /path/to/artifacts/deepseek-workbenc
 node /path/to/local-install/node_modules/deepseek-workbench/scripts/source-overlay.mjs   /path/to/built/deepseek-harness /path/to/new-workbench-overlay.yml
 ```
 
+### 从本地评审包复验
+
+候选 `5d63e78` 的评审包包含 Workbench Git bundle、独立 npm 安装归档、Harness 保护补丁的增量 bundle，以及 `SHA256SUMS`。评审者先在交接目录运行 `shasum -a 256 -c SHA256SUMS`。从 Workbench bundle 还原代码、测试和验收文档，不需要已有 Workbench 仓库。将评审检出建在用户目录下的普通工作目录。系统共享临时目录中的 worktree 隔离在当前 macOS Harness 基线上未通过。
+
+```sh
+review_dir='/absolute/path/to/handoff'
+git init --initial-branch=review-initial workbench-review
+git -C workbench-review bundle verify "$review_dir/workbench-5d63e78.bundle"
+git -C workbench-review fetch --no-tags "$review_dir/workbench-5d63e78.bundle" \
+  refs/heads/main:refs/heads/main \
+  refs/heads/dev/DEV-002-receipts-release-verification:refs/heads/review/workbench
+git -C workbench-review checkout --detach refs/heads/review/workbench
+test "$(git -C workbench-review rev-parse HEAD)" = 5d63e784e7e5a4ffe38ea12e10ef024a11d3c86c
+```
+
+在含 `4b399c39a6d1479cd84ca591b4d7c88e24d38a96` 的独立 Harness 检出中导入 `protected-harness.bundle`。
+
+```sh
+git bundle verify "$review_dir/protected-harness.bundle"
+git fetch --no-tags "$review_dir/protected-harness.bundle" \
+  refs/heads/workbench/protect-task-records:refs/heads/review/harness-protection
+git checkout --detach refs/heads/review/harness-protection
+test "$(git rev-parse HEAD)" = 5bff262ae7f431f6a75cc1d4d7f52527d6e55727
+corepack pnpm install --frozen-lockfile
+corepack pnpm run build
+```
+
+原生构建需使用含 `node_api.h` 的 Node 24.22.3 与本机编译器。已有锁定依赖缓存时，安装命令可加 `--offline`。按前述安装步骤使用 `workbench-5d63e78.tgz`，从还原的 Workbench 检出运行 [测试计划](../TEST_PLAN.md) 中的命令。双版本升级与回退所需的旧 Workbench `8fde87b` 已在该 bundle 的历史中，可用独立 worktree 检出。评审包的发布条件见 [验收表](../ACCEPTANCE.md)。
+
 ## 配置用量估算及预算提醒
 
 可把本地 JSON 路径作为生成 overlay 的第三个参数。省略时仍可看计数和覆盖，估算金额为空。以下数字仅演示字段格式，部署时填写实际适用费率。费率单位为每百万 token，按提供方、模型和 UTC 生效日期匹配。
