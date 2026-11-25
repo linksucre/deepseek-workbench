@@ -24,7 +24,7 @@
 | 工单 | 负责人 | 分支 | 改动范围 |
 | --- | --- | --- | --- |
 | `DEV-002` | Codex | `dev/DEV-002-integration-gates` | 组合已提交的候选基线，补挂上下文和分页门禁并复跑组合测试 |
-| `DEV-002` | Codex | `dev/DEV-002-worktree-gate` | 基于 `609c98c` 将 DEV-011 的固定 Host 写隔离试验接入 CI |
+| `DEV-002` | Codex | `dev/DEV-002-worktree-gate` | 基于 `609c98c` 固化 worktree CI 门禁 `c9b8af6` 并独立复验 `28c773e` |
 | `DEV-002` | Codex | `dev/DEV-002-candidate-verification` | 组合 DEV-008 交互、DEV-010 与 DEV-011 回归和原生 worktree 门禁，复跑候选并记录发布依赖 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
@@ -142,3 +142,5 @@ DEV-011 隔离试验 `c0cdfa8`（文档 `6e4e0d4`）在固定 Harness 原生 `wo
 DEV-008 协作回归 `4253d74` 覆盖模拟模型经原生工具建议、用户以键盘改选组合方式、任务说明与冷读。DEV-010 `73993e7` 验证资料读取期间撤权、会话解除绑定和租约释放；资料面板 `75865ae` 保留在原工单分支，等待 `cf9066b` 的公共操作评审。DEV-011 `7b725e1` 验证默认无审阅、拒绝派发无额外模型调用或状态更新、显式回送附审阅标识与提示，以及重启核对后按已知部分结算。显式审阅的公共操作、授权与持久化等待 `535b9af` 评审。
 
 DEV-002 组合候选 `5bd55ef` 叠加上述三项回归和原生 worktree CI 门禁。Node 24.22.3 下 26 项回归、相对 main 的仓库门禁、actionlint、原生 Host 及独立 npm 归档 Chromium 流程通过。本地 Harness `5bff262ae7` 通过存储保护、恢复、用量、授权和交付冒烟。Apple M1 Max 的分页基准为 3000 条任务、50 次热读 50 条，p95 11.39 ms。TST-005 试跑手册已随候选提交，真实模型试跑待授权。Workbench 未配置远端，候选所钉保护版 Harness 提交在配置的上游仓库拉取返回 `not our ref`，远端 CI 和正式发布验收待基线可用。
+
+DEV-002 独立复验 `28c773e` 包括 worktree 门禁 `c9b8af6` 和 DEV-010 撤权回归 `73993e7`。Node 24.22.3 下 26 项回归、仓库门禁、actionlint、三次原生 worktree 试验、完整 Host、用量、存储、应用和资料冒烟、独立归档 Chromium 均通过。Apple M1 Max 上 3000 条任务冷开后 50 次热读，每页 50 条，p95 6.77 ms。以上为本地结果，远端验收以可用并审定的 Harness 基线为前提。
