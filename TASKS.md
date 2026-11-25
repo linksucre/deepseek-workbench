@@ -30,6 +30,7 @@
 | `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
+| `DEV-006` | Codex | `dev/DEV-006-start-timeout` | 基于 `dac36f6` 处理原生创建超时、迟到回执与 TST-003 冒烟 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
