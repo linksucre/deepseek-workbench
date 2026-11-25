@@ -19,6 +19,8 @@ const marker = 'Workbench native presentation probe'
 const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
   && JSON.stringify(body.messages).includes(marker)
 let modelSteps = 0
+let concurrentPresentation = false
+const submitMarker = 'Workbench owner submission concurrency probe'
 let allModelRequests = 0
 let reviewRequest
 let releaseReview
@@ -49,7 +51,10 @@ const provider = createServer(async (request, response) => {
     const step = markerRequest(body) ? ++modelSteps : 0
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
-    const filename = { 1: 'first.md', 2: 'second.md', 5: 'second.md' }[step]
+    const manualPresentation = !concurrentPresentation && body.tools?.some(tool => tool.name === 'present') &&
+      JSON.stringify(body.messages).includes(submitMarker)
+    if (manualPresentation) concurrentPresentation = true
+    const filename = manualPresentation ? 'first.md' : { 1: 'first.md', 2: 'second.md', 5: 'second.md' }[step]
     const name = suggest ? 'workbench_suggest'
       : filename ? 'present' : [3, 6].includes(step) ? 'workbench_submit' : undefined
     const args = suggest ? { domain: 'documents', methods: ['direct'], reason: 'Clear draft', skillIds: [] }
@@ -137,7 +142,8 @@ async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
       method: 'POST', signal: AbortSignal.timeout(10_000), headers,
       body: JSON.stringify({ operation, input }),
     })
-    assert.equal(response.status, options.status ?? 200, `status for ${operation}\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
+    const statuses = Array.isArray(options.status) ? options.status : [options.status ?? 200]
+    assert.ok(statuses.includes(response.status), `status ${response.status} for ${operation}, expected ${statuses.join(' or ')}\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
     if (!response.headers.get('content-type')?.startsWith('application/json')) {
       assert.ok(!response.ok, 'Successful commands must return JSON')
       return
@@ -148,11 +154,12 @@ async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
   return rpc
 }
 
-async function stop() {
+async function stop(signal = 'SIGTERM') {
   if (!child) return
-  child.kill()
-  await closed
+  child.kill(signal)
+  const [, exitSignal] = await closed
   child = undefined
+  return exitSignal
 }
 
 const hash = text => createHash('sha256').update(text).digest('hex')
@@ -350,7 +357,10 @@ try {
     taskId: fresh.task.id, requestId: 'ready', expectedRevision: 0,
   })
   const freshStart = { taskId: fresh.task.id, requestId: 'start', expectedRevision: readyFresh.task.revision }
-  const freshActive = await rpc.workbench('task.start', freshStart)
+  const [freshActive, sameStart] = await Promise.all([
+    rpc.workbench('task.start', freshStart), rpc.workbench('task.start', freshStart),
+  ])
+  assert.deepEqual(sameStart, freshActive)
   assert.equal(freshActive.task.status, 'active')
   assert.notEqual(freshActive.runs[0].rootSessionId, sessionId)
   assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
@@ -459,6 +469,34 @@ try {
   const nextPage = await rpc.workbench('task.list', { ...listQuery, cursor: firstPage.nextCursor })
   assert.notEqual(firstPage.items[0].id, nextPage.items[0].id)
   assert.equal((await rpc.workbench('task.list', { ...listQuery, cursor: 'bad' }, { status: 400 })).code, 'INVALID')
+  const ownerStage = await rpc.workbench('task.get', { taskId: fresh.task.id })
+  await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
+    requestId: 'owner-presentation', text: submitMarker })
+  await until(async () => concurrentPresentation && (await rpc('session/list', {})).items.some(item =>
+    item.sessionId === parentId && !item.running), 'owner submission presentation committed')
+  const submit = { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
+    requestId: 'owner-submit', selection: 'latest-presentation' }
+  const [singleSubmission, sameSubmission] = await Promise.all([
+    rpc.workbench('task.submit', submit), rpc.workbench('task.submit', submit),
+  ])
+  assert.deepEqual(sameSubmission, singleSubmission)
+  assert.equal(singleSubmission.task.revision, ownerStage.task.revision + 1)
+  assert.equal(singleSubmission.submissions.length, 1)
+  assert.equal(singleSubmission.artifacts.length, 1)
+  assert.equal((await rpc.workbench('task.submit', { ...submit, selection: 'files', paths: ['first.md'] },
+    { status: 400 })).code, 'INVALID')
+  const approve = { taskId: fresh.task.id, expectedRevision: singleSubmission.task.revision,
+    submissionId: singleSubmission.task.currentSubmissionId, verdict: 'accept', reason: null,
+    confirmedCriteria: ['facts'] }
+  const decisions = await Promise.all(['owner-approve-a', 'owner-approve-b'].map(requestId =>
+    rpc.workbench('task.decide', { ...approve, requestId }, { status: [200, 409] })))
+  assert.equal(decisions.filter(item => item.code === 'REVISION_CONFLICT').length, 1)
+  const oneDecision = decisions.find(item => item.task?.status === 'accepted')
+  assert.ok(oneDecision)
+  assert.equal(oneDecision.task.revision, singleSubmission.task.revision + 1)
+  assert.equal(oneDecision.decisions.length, 1)
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), oneDecision)
+
   const loose = await rpc('session/create', { workspaceId: workspace.workspaceId, agentPreset: 'task-collaborator' })
   await rpc('session/prompt', { sessionId: loose.sessionId, requestId: randomUUID(), mode: 'queue',
     content: [{ type: 'text', text: unboundMarker }] })
@@ -480,14 +518,48 @@ try {
   await stop()
 
   await cp(backup, restored, { recursive: true })
-  rpc = await start({}, { dataHome: restored })
+  const reservedPath = join(root, 'before-native-create.json')
+  rpc = await start({ WORKBENCH_TEST_HOLD_NATIVE_CREATE: reservedPath }, { dataHome: restored })
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
   assert.deepEqual(await rpc.workbench('task.create', brief), draft)
   assert.deepEqual(await rpc.workbench('task.start', lostStart), unresolved)
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
   assert.equal((await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 50 })).sessionId, sessionId)
   assert.equal(allModelRequests, beforeRollback)
-  console.log('PASS: native delivery, isolated review recovery, persisted acceptance, overlay disablement, and profile backup restore.')
+  assert.deepEqual(await rpc.workbench('task.submit', submit), singleSubmission)
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), oneDecision)
+  const interrupted = await rpc.workbench('task.create', { ...brief, requestId: 'interrupted-after-reservation' })
+  const interruptedReady = await rpc.workbench('task.ready', {
+    taskId: interrupted.task.id, requestId: 'ready', expectedRevision: 0,
+  })
+  const interruptedStart = { taskId: interrupted.task.id, requestId: 'start', expectedRevision: interruptedReady.task.revision }
+  const pendingResponse = rpc.workbench('task.start', interruptedStart).then(() => null, error => error)
+  const pendingNative = await until(async () => {
+    try { return JSON.parse(await readFile(reservedPath, 'utf8')) }
+    catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error }
+  }, 'durable reservation before native create')
+  assert.equal(pendingNative.workspaceId, workspace.workspaceId)
+  assert.equal(await stop('SIGKILL'), 'SIGKILL')
+  assert.ok((await pendingResponse) instanceof Error)
+  rpc = await start({}, { dataHome: restored })
+  const pending = await rpc.workbench('task.get', { taskId: interrupted.task.id })
+  assert.equal(pending.task.status, 'blocked')
+  assert.equal(pending.task.revision, interruptedReady.task.revision + 1)
+  assert.deepEqual(pending.runs, [])
+  assert.deepEqual(await rpc.workbench('task.start', interruptedStart), pending)
+  assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
+
+  const reset = await rpc.workbench('task.reconcile', { taskId: pending.task.id, requestId: 'discard',
+    expectedRevision: pending.task.revision, action: 'discard-intent', rootSessionId: null })
+  assert.equal(reset.task.status, 'ready')
+  const retry = { taskId: reset.task.id, requestId: 'explicit-retry', expectedRevision: reset.task.revision }
+  const started = await rpc.workbench('task.start', retry)
+  assert.equal(started.task.status, 'active')
+  assert.notEqual(started.runs[0].rootSessionId, pendingNative.sessionId)
+  assert.deepEqual(await rpc.workbench('task.start', retry), started)
+  assert.equal((await rpc('session/list', {})).items.length, sessionIds.length + 1)
+  assert.equal(allModelRequests, beforeRollback)
+  console.log('PASS: native delivery, concurrent submission and acceptance, cold replay, interrupted startup, isolated review and profile restore.')
 } finally {
   await stop()
   provider.closeAllConnections()

@@ -1,3 +1,5 @@
+import { writeFile } from 'node:fs/promises'
+
 export const inject = ['workspaceRegistry', 'sessionController', 'sessionQuery']
 
 export async function apply(ctx) {
@@ -38,6 +40,13 @@ export async function apply(ctx) {
         instrumented.add(workspace)
       }
       return workspace
+    }
+  }
+  const reservedPath = process.env.WORKBENCH_TEST_HOLD_NATIVE_CREATE
+  if (reservedPath) {
+    ctx.sessionController.create = async ({ sessionId, workspaceId }) => {
+      await writeFile(reservedPath, JSON.stringify({ sessionId, workspaceId }), { flag: 'wx', mode: 0o600 })
+      return new Promise(() => {})
     }
   }
   if (process.env.WORKBENCH_TEST_FAIL_ATTACH === 'lost-receipt') {
