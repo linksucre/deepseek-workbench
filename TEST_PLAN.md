@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | TST-001 | 预设加载、交付工具、默认预设隔离 | 用固定版本真实 Web Host 与本地模拟模型截取请求；检查 HTTP 鉴权、系统指令及 read/write/edit、web_search/web_fetch、skill、present 是否逐一出现 |
 | TST-002 | 状态、终态、授权 | [纯领域回归](tests/unit/task.test.mjs)；集成伪造任务、工作区越权、子会话越权、Cookie 缺失 |
-| TST-003 | 并发、幂等、崩溃恢复 | [应用服务接入试验](tests/integration/application-smoke.mjs) 验证原生存储和文件层的状态流转、访问检查、幂等重放和漂移；[真实 Host](tests/integration/host-delivery-smoke.mjs) 并发验证同请求 ID 的启动与提交、同 revision 的两次接受、不同摘要拒绝和冷启动重放。覆盖启动意图落盘后强制退出、原生挂载失败和响应丢失；独立超时注入待验证 |
+| TST-003 | 并发、幂等、崩溃恢复 | [应用服务接入试验](tests/integration/application-smoke.mjs) 验证原生存储和文件层的状态流转、访问检查、幂等重放和漂移；[真实 Host](tests/integration/host-delivery-smoke.mjs) 并发验证同请求 ID 的启动与提交、同 revision 的两次接受、不同摘要拒绝和冷启动重放。覆盖启动意图落盘后强制退出、原生挂载失败、响应丢失和创建超时后的迟到回执 |
 | TST-004 | 产物及人工验收 | [交付模块回归](tests/unit/delivery.test.mjs) 验证选择范围、文件权限和重新计算版本；[原生展示联调](tests/integration/host-delivery-smoke.mjs) 验证已认证任务命令、跨源拒绝、任务跨重启、真实挂载失败后的启动重放和原 ID 复挂、实际工具调用、冷读、授权和版本变化；同一 Host 验证原生提交、退回重交、条件确认和终态复读；替换或移除文件、symlink 越界、旧提交回放、伪造工具证据 |
 | TST-005 | 真实使用与流程选择 | 开发、设计、写作、材料各一真实授权任务；覆盖直接做、先审方向、先查证、复用、用户覆盖与中途调整 |
 | TST-006 | 统计准确性 | [原生用量](tests/integration/usage-host-smoke.mjs) 验证失败结算、可得缓存、已绑定子会话及无凭据冷读；[生产命令](tests/integration/host-delivery-smoke.mjs) 与 [浏览器](tests/integration/browser-workbench.mjs) 验证授权、费用、软预算与缺报 |

@@ -95,10 +95,11 @@ async function until(read, description, timeout = 25_000) {
   while (Date.now() < deadline) {
     const result = await read()
     if (result) return result
-    if (child?.exitCode !== null) break
+    if (!child || child.exitCode !== null || child.signalCode !== null) break
     await new Promise(resolve => setTimeout(resolve, 100))
   }
-  throw new Error(`Unable to verify ${description}\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
+  const exit = child?.signalCode ?? child?.exitCode ?? 'running'
+  throw new Error(`Unable to verify ${description} (Host: ${exit})\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
 }
 
 async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
@@ -139,7 +140,7 @@ async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
     const headers = { 'content-type': 'application/json', origin: options.origin ?? origin }
     if (!options.anonymous) headers.cookie = cookie
     const response = await fetch(`${origin}/workbench/v1/command`, {
-      method: 'POST', signal: AbortSignal.timeout(10_000), headers,
+      method: 'POST', signal: AbortSignal.timeout(options.timeout ?? 10_000), headers,
       body: JSON.stringify({ operation, input }),
     })
     const statuses = Array.isArray(options.status) ? options.status : [options.status ?? 200]
@@ -541,7 +542,8 @@ try {
   assert.equal(pendingNative.workspaceId, workspace.workspaceId)
   assert.equal(await stop('SIGKILL'), 'SIGKILL')
   assert.ok((await pendingResponse) instanceof Error)
-  rpc = await start({}, { dataHome: restored })
+  const latePath = join(root, 'late-native-create')
+  rpc = await start({ WORKBENCH_TEST_LATE_NATIVE_CREATE: latePath }, { dataHome: restored })
   const pending = await rpc.workbench('task.get', { taskId: interrupted.task.id })
   assert.equal(pending.task.status, 'blocked')
   assert.equal(pending.task.revision, interruptedReady.task.revision + 1)
@@ -559,7 +561,45 @@ try {
   assert.deepEqual(await rpc.workbench('task.start', retry), started)
   assert.equal((await rpc('session/list', {})).items.length, sessionIds.length + 1)
   assert.equal(allModelRequests, beforeRollback)
-  console.log('PASS: native delivery, concurrent submission and acceptance, cold replay, interrupted startup, isolated review and profile restore.')
+  async function readyTask(requestId) {
+    const draftTask = await rpc.workbench('task.create', { ...brief, requestId })
+    return rpc.workbench('task.ready', { taskId: draftTask.task.id, requestId: 'ready', expectedRevision: 0 })
+  }
+  const lateReady = await readyTask('late-native-result')
+  const unrelatedReady = await readyTask('start-during-native-timeout')
+  const lateStart = { taskId: lateReady.task.id, requestId: 'start', expectedRevision: lateReady.task.revision }
+  const unrelatedStart = { taskId: unrelatedReady.task.id, requestId: 'start', expectedRevision: unrelatedReady.task.revision }
+  const priorSessions = (await rpc('session/list', {})).items.map(item => item.sessionId)
+  await writeFile(`${latePath}.arm`, '')
+  assert.equal((await rpc.workbench('task.start', lateStart, { status: 409, timeout: 20_000 })).code, 'RECONCILIATION_REQUIRED')
+  const lateBlocked = await rpc.workbench('task.get', { taskId: lateStart.taskId })
+  assert.equal(lateBlocked.task.status, 'blocked')
+  assert.equal(lateBlocked.task.revision, lateReady.task.revision + 1)
+  assert.deepEqual(lateBlocked.runs, [])
+  assert.deepEqual(await rpc.workbench('task.start', lateStart), lateBlocked)
+  assert.equal((await rpc.workbench('task.reconcile', { taskId: lateStart.taskId, requestId: 'discard',
+    expectedRevision: lateBlocked.task.revision, action: 'discard-intent', rootSessionId: null },
+    { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  const unrelated = await rpc.workbench('task.start', unrelatedStart)
+  assert.equal(unrelated.task.status, 'active')
+
+  await writeFile(`${latePath}.release`, '')
+  const { sessionId: lateSession } = await until(async () => {
+    try { return JSON.parse(await readFile(`${latePath}.result`, 'utf8')) }
+    catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error }
+  }, 'late native create result')
+  const verifyLate = { taskId: lateStart.taskId, requestId: 'verify-late', expectedRevision: lateBlocked.task.revision,
+    action: 'attach', rootSessionId: lateSession }
+  assert.equal((await rpc.workbench('task.reconcile', verifyLate, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: lateStart.taskId }), lateBlocked)
+  await stop()
+  rpc = await start({}, { dataHome: restored })
+  assert.deepEqual(await rpc.workbench('task.start', lateStart), lateBlocked)
+  assert.equal((await rpc.workbench('task.reconcile', verifyLate, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
+  assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
+  assert.equal(allModelRequests, beforeRollback)
+  console.log('PASS: native delivery, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review and profile restore.')
 } finally {
   await stop()
   provider.closeAllConnections()

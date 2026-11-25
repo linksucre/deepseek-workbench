@@ -1,6 +1,17 @@
-import { writeFile } from 'node:fs/promises'
+import { access, writeFile } from 'node:fs/promises'
+import { setTimeout } from 'node:timers/promises'
 
 export const inject = ['workspaceRegistry', 'sessionController', 'sessionQuery']
+
+async function exists(path) {
+  try {
+    await access(path)
+    return true
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+}
 
 export async function apply(ctx) {
   if (process.env.WORKBENCH_TEST_REVIEW_RECEIPT_FAULT === '1') {
@@ -47,6 +58,20 @@ export async function apply(ctx) {
     ctx.sessionController.create = async ({ sessionId, workspaceId }) => {
       await writeFile(reservedPath, JSON.stringify({ sessionId, workspaceId }), { flag: 'wx', mode: 0o600 })
       return new Promise(() => {})
+    }
+  }
+  const latePath = process.env.WORKBENCH_TEST_LATE_NATIVE_CREATE
+  if (latePath) {
+    const controller = ctx.sessionController
+    const create = controller.create.bind(controller)
+    let injected = false
+    controller.create = async request => {
+      if (injected || !await exists(`${latePath}.arm`)) return create(request)
+      injected = true
+      while (!await exists(`${latePath}.release`)) await setTimeout(50)
+      const result = await create(request)
+      await writeFile(`${latePath}.result`, JSON.stringify({ sessionId: result.sessionId }), { mode: 0o600 })
+      return result
     }
   }
   if (process.env.WORKBENCH_TEST_FAIL_ATTACH === 'lost-receipt') {

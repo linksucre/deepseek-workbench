@@ -1,17 +1,39 @@
 import { TaskError } from '../domain/task.mjs'
 import { observeBoundRootSession } from '../harness/session-observation.mjs'
 
+const nativeCreateDeadlineMs = 8_000
 const reconcile = () => new TaskError('RECONCILIATION_REQUIRED', 'Native startup requires verification')
 
 export function createHostStart({ app, repository, workspaceRegistry, sessionController, sessionQuery }) {
   const preset = 'task-collaborator'
+  const creating = new Set()
   let queue = Promise.resolve()
-  // Single profile owner. Serialize across tasks as native session claims
-  // span more than one task key.
+  // Serialize Workbench startup and binding decisions across the owner profile.
   function exclusive(action) {
     const work = queue.then(action)
     queue = work.catch(() => {})
     return work
+  }
+
+  async function createNative(taskId, intent) {
+    creating.add(taskId)
+    const operation = Promise.resolve().then(() => sessionController.create({
+      workspaceId: intent.workspaceId, sessionId: intent.reservedSessionId, agentPreset: intent.agentPreset,
+    }))
+    const settled = () => { creating.delete(taskId) }
+    void operation.then(settled, settled)
+
+    // The pinned native create API has no cancellation signal. Keep the task
+    // reserved until it settles, and never treat its late response as a receipt.
+    let timer
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(reconcile()), nativeCreateDeadlineMs)
+    })
+    try {
+      return await Promise.race([operation, deadline])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async function lookup(sessionId) {
@@ -101,9 +123,7 @@ export function createHostStart({ app, repository, workspaceRegistry, sessionCon
         }
         let receipt
         try {
-          const created = await sessionController.create({
-            workspaceId: intent.workspaceId, sessionId: intent.reservedSessionId, agentPreset: preset,
-          })
+          const created = await createNative(input.taskId, intent)
           if (created.sessionId !== intent.reservedSessionId || created.agentPreset !== preset) throw reconcile()
           receipt = { sessionId: created.sessionId, workspaceId: intent.workspaceId, outcome: 'created' }
         } catch (err) {
@@ -121,8 +141,11 @@ export function createHostStart({ app, repository, workspaceRegistry, sessionCon
 
     reconcile(principal, input) {
       return exclusive(async () => {
-        if (input.action === 'discard-intent') return app.discardStart(principal, input)
         const detail = await app.get(principal, input.taskId)
+        if (input.action === 'discard-intent') {
+          if (creating.has(input.taskId)) throw reconcile()
+          return app.discardStart(principal, input)
+        }
         const record = repository.read(input.taskId)
         const replay = ownReceipt(record, principal, input, 'task.reconcile.bind')
         if (replay) {
