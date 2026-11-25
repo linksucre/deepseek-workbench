@@ -11,7 +11,7 @@
     "bundle": "./src/preset/cordis.patch.yml"
   },
   "scripts": {
-    "check": "node --test tests/regression/*.test.mjs && node scripts/check.mjs",
+    "check": "node --test tests/regression/*.test.mjs tests/unit/*.test.mjs && node scripts/check.mjs",
     "test:smoke": "node tests/integration/harness-smoke.mjs"
   },
   "devDependencies": {
