@@ -19,6 +19,9 @@ const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
   && JSON.stringify(body.messages).includes(marker)
 let modelSteps = 0
 let allModelRequests = 0
+let reviewRequest
+let releaseReview
+const reviewGate = new Promise(resolve => { releaseReview = resolve })
 let suggestionSteps = 0
 let suggestionResults = []
 let unboundToolNames
@@ -30,6 +33,11 @@ const provider = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
     allModelRequests += 1
+    const review = JSON.stringify(body.messages).includes('review isolation probe')
+    if (review) {
+      reviewRequest = body
+      await reviewGate
+    }
     if (JSON.stringify(body.messages).includes(suggestionMarker)) {
       suggestionResults = body.messages.flatMap(message => Array.isArray(message.content) ? message.content : [])
         .filter(block => block.type === 'tool_result')
@@ -57,7 +65,7 @@ const provider = createServer(async (request, response) => {
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
     } else {
-      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'done' } })
+      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: review ? 'independent review' : 'done' } })
     }
     events.push(
       { type: 'content_block_stop', index: 0 },
@@ -97,6 +105,7 @@ async function start(probe = {}) {
     env: {
       ...process.env, DSH_HOME: join(root, 'dsh'), DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      WORKBENCH_TEST_REVIEW: '1',
       ...probe,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -119,6 +128,13 @@ async function start(probe = {}) {
     const { result: envelope } = await result.json()
     assert.equal(envelope.ok, true, JSON.stringify(envelope.error))
     return envelope.value
+  }
+  rpc.review = async input => {
+    const response = await fetch(`${origin}/workbench/test/review`, {
+      method: 'POST', signal: AbortSignal.timeout(20_000),
+      headers: { 'content-type': 'application/json', origin, cookie }, body: JSON.stringify(input),
+    })
+    return { status: response.status, data: await response.json() }
   }
   rpc.page = path => fetch(`${origin}${path}`, { headers: { cookie } })
   rpc.workbench = async (operation, input, options = {}) => {
@@ -333,6 +349,29 @@ try {
   assert.notEqual(freshActive.runs[0].rootSessionId, sessionId)
   assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
   assert.equal((await rpc('session/list', {})).items.length, 2)
+  const parentId = freshActive.runs[0].rootSessionId
+  await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: freshActive.task.revision,
+    requestId: 'parent-history', text: 'parent-only history marker' })
+  await until(async () => (await rpc('session/list', {})).items.some(item =>
+    item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
+  const reviewInput = { sessionId: parentId, workspaceId: workspace.workspaceId, childId: `session-${randomUUID()}`,
+    instruction: 'Check the selected brief', material: 'review isolation probe' }
+  assert.equal((await rpc.review({ ...reviewInput, deny: true })).status, 404)
+  const reviewing = rpc.review(reviewInput)
+  try {
+    await until(() => reviewRequest, 'restricted reviewer model request')
+    assert.deepEqual(reviewRequest.tools ?? [], [])
+    assert.match(JSON.stringify(reviewRequest.system), /independent reviewer/i)
+    assert.doesNotMatch(JSON.stringify(reviewRequest.messages), /parent-only history marker/)
+    assert.equal((await rpc.review({ ...reviewInput, childId: `session-${randomUUID()}` })).status, 409)
+  } finally {
+    releaseReview()
+  }
+  const review = await reviewing
+  assert.equal(review.status, 200, JSON.stringify(review.data))
+  assert.deepEqual(review.data, { childSessionId: reviewInput.childId, outcome: 'completed', summary: 'independent review',
+    origin: 'subagent', parentSession: parentId, agentPreset: 'task-reviewer' })
+
   const knownIds = new Set((await rpc('session/list', {})).items.map(item => item.sessionId))
   await stop()
   rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
@@ -351,7 +390,7 @@ try {
     taskId: uncertain.task.id, requestId: 'recover', expectedRevision: unresolved.task.revision,
     action: 'attach', rootSessionId: unknownId,
   }, { status: 409 })
-  assert.equal((await rpc('session/list', {})).items.length, 3)
+  assert.equal((await rpc('session/list', {})).items.length, knownIds.size + 1)
   assert.ok(!(await rpc('workspace/create', { path: root })).workspace.sessionIds.includes(unknownId))
   const listQuery = { workspaceId: workspace.workspaceId, limit: 1, cursor: null }
   const firstPage = await rpc.workbench('task.list', listQuery)
@@ -365,7 +404,7 @@ try {
     content: [{ type: 'text', text: unboundMarker }] })
   const names = await until(() => unboundToolNames, 'unbound model tool catalog')
   assert.ok(!names.some(name => name.startsWith('workbench_')))
-  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, native suggestion, presentation, submission, drift, return and persisted acceptance.')
+  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, native suggestion, presentation, submission, drift, return, persisted acceptance and isolated native review.')
 } finally {
   await stop()
   provider.closeAllConnections()

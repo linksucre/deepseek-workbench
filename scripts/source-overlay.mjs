@@ -14,6 +14,7 @@ await access(storage)
 const entry = new URL('../src/application/entry.mjs', import.meta.url).href
 const preset = await readFile(new URL('../src/preset/cordis.patch.yml', import.meta.url), 'utf8')
 if (usagePolicy !== undefined) await access(resolve(usagePolicy))
+const reviewer = await readFile(new URL('../src/preset/reviewer.patch.yml', import.meta.url), 'utf8')
 const item = [
   '- insert:',
   '    - id: workbench-host',
@@ -24,4 +25,4 @@ const item = [
     `        usagePolicyFile: ${JSON.stringify(pathToFileURL(resolve(usagePolicy)).href)}`,
   ]),
 ]
-await writeFile(outputPath, `${preset.trimEnd()}\n\n${item.join('\n')}\n`, { flag: 'wx', mode: 0o600 })
+await writeFile(outputPath, `${preset.trimEnd()}\n\n${reviewer.trimEnd()}\n\n${item.join('\n')}\n`, { flag: 'wx', mode: 0o600 })

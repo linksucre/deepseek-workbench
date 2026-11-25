@@ -11,7 +11,7 @@
 | TST-007 | 迁移与发布 | [存储原生后端冒烟](tests/integration/storage-smoke.mjs) 验证备份、重开、并发 revision 与重放；另覆盖损坏记录、停用、版本兼容；区分试运行、发布验收和回滚 |
 | TST-008 | 列表性能与界面 | [分页基准](tests/integration/list-performance.mjs) 写入 3000 条任务并重开原生后端，采样 50 次热读 50 条并记录 p95、环境和样本；[真实浏览器双链路](tests/integration/browser-workbench.mjs) 验证会话对话、材料漂移、退回及再次接受，覆盖 390px 小屏；键盘和长文本专项待补 |
 | TST-009 | 工程规范 | 自动校验文档、唯一编号、追踪覆盖、任务依赖及契约引用，PR 检查敏感目录的文档变更；元模式与工具缺失均有负例回归 |
-| TST-010 | 多 Agent 协作 | 根与子关联，默认关闭，授权和隔离，失败合并和缺报 |
+| TST-010 | 多 Agent 协作 | [原生 Host 审阅隔离](tests/integration/host-delivery-smoke.mjs) 验证无工具、无父上下文继承、授权与单根并发限制；后续覆盖默认关闭、失败合并和子会话用量归集 |
 | TST-011 | 上下文索引 | 来源、日期、权限，过期资料提示和同一任务重启恢复 |
 | TST-012 | M1 首条集成验收 | [评审场景](docs/design/M1-RECOVERY-AND-SUBMISSION.md)，使用真实 Host 和模拟模型，覆盖预留 ID、重启、挂载、用户覆盖、提交选择、漂移、退回与再次接受 |
 
