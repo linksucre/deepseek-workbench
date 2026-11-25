@@ -479,6 +479,19 @@ try {
   assert.equal(await rpc.workbench('task.get', { taskId: draft.task.id }, { status: 405 }), undefined)
   await stop()
 
+  const damaged = join(root, 'damaged')
+  await cp(backup, damaged, { recursive: true })
+  const damagedFile = join(damaged, 'storages', 'workbench_tasks', 'tasks', `${draft.task.id}.json`)
+  const damagedBytes = '{"version":'
+  await writeFile(damagedFile, damagedBytes)
+  rpc = await start({}, { dataHome: damaged })
+  await rpc.workbench('task.create', brief, { status: 405 })
+  const damagedPage = await rpc.page('/workbench')
+  assert.doesNotMatch(await damagedPage.text(), /<title>DeepSeek 工作台<\/title>/)
+  assert.equal(await readFile(damagedFile, 'utf8'), damagedBytes)
+  assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
+  await stop()
+
   await cp(backup, restored, { recursive: true })
   rpc = await start({}, { dataHome: restored })
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
@@ -487,7 +500,7 @@ try {
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
   assert.equal((await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 50 })).sessionId, sessionId)
   assert.equal(allModelRequests, beforeRollback)
-  console.log('PASS: native delivery, isolated review recovery, persisted acceptance, overlay disablement, and profile backup restore.')
+  console.log('PASS: native delivery, isolated review recovery, persisted acceptance, overlay disablement, corrupt-record protection, and profile backup restore.')
 } finally {
   await stop()
   provider.closeAllConnections()

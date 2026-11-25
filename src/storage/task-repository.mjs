@@ -42,6 +42,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
     name: TASK_DOMAIN,
     version: 1,
     layout: 'per-record',
+    strictRecordDocuments: true,
     tables: { tasks: domainTable(schema) },
   }))
   const table = domain.table('tasks')

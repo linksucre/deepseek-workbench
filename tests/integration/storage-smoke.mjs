@@ -94,18 +94,30 @@ try {
     const directory = join(temp, label)
     await cp(backup, directory, { recursive: true })
     await writeFile(recordPath(directory), contents)
-    await useStorage(directory, async repo => {
-      assert.equal(repo.read(id), undefined)
-      await assert.rejects(repo.commit(id, { request: request(label), expectedRevision: 2 },
-        () => assert.fail('unreadable record must not be committed')), { code: 'NOT_FOUND' })
-    })
+    await assert.rejects(useStorage(directory, () => assert.fail('unreadable task domain opened')),
+      { code: 'malformed-medium' })
     assert.equal(await readFile(recordPath(directory), 'utf8'), contents)
   }
+
+  const collision = join(temp, 'key-appears')
+  await cp(backup, collision, { recursive: true })
+  const newId = '01882e02-360d-4d75-bee7-4b8b0dd34b2b'
+  const newDraft = structuredClone(draft)
+  newDraft.task.id = newId
+  await useStorage(collision, async repo => {
+    const claimed = join(collision, TASK_DOMAIN, 'tasks', `${newId}.json`)
+    const unknown = '{"record":'
+    assert.equal(repo.read(newId), undefined)
+    await writeFile(claimed, unknown)
+    await assert.rejects(repo.create(newDraft, request('create')), { code: 'malformed-medium' })
+    assert.equal(await readFile(claimed, 'utf8'), unknown)
+    assert.equal(repo.read(id).detail.task.revision, 2)
+  })
 
   const restored = join(temp, 'restored')
   await cp(backup, restored, { recursive: true })
   await useStorage(restored, async repo => assert.deepEqual(await repo.exportSnapshot(), exported))
-  console.log('PASS: native storage revision and replay, legacy V1 migration, invalid-record behavior, and clean backup restore.')
+  console.log('PASS: native storage revision and replay, legacy V1 migration, strict corrupted-record protection, and clean backup restore.')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }

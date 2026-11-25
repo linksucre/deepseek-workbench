@@ -58,3 +58,5 @@ node /path/to/local-install/node_modules/deepseek-workbench/scripts/source-overl
 ```
 
 修改本地费率后重启整个工作台 profile。软预算适用于该 profile 的每个任务，只提醒，不停止模型。配置中无需填写凭据。
+
+DEV-005 评审分支使用本机隔离的 Harness 补丁，按 [任务记录保护评审](design/TASK-RECORD-PRESERVATION.md) 验证。工作台遇到损坏记录时拒绝挂载，标准 Harness 会话仍可用。保留故障目录，从已核对备份创建独立 profile 并复验后恢复写入。
