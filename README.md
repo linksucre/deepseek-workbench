@@ -2,7 +2,7 @@
 
 给个人工作者的 DeepSeek Harness 扩展。一个任务协作 Agent 根据目标和验收条件选做法，工作台关联会话、交付证据、验收与用量。
 
-当前实现是可加载的任务协作预设。任务聚合、Web 工作台及成本归集处于设计基线阶段。查看 [开发任务](TASKS.md) 和 [变更记录](CHANGELOG.md)。
+根目录开发基线提供可加载的任务协作预设。任务聚合、Web 工作台、交付验收和成本归集在工单候选中已有本地验证。查看 [开发任务](TASKS.md)、[验收状态](ACCEPTANCE.md) 和 [变更记录](CHANGELOG.md)。
 
 | 阶段 | 文档 |
 | --- | --- |
@@ -16,4 +16,4 @@
 
 在根目录运行 `npm ci` 安装门禁依赖，再运行 `npm run check`。预设集成测试需要一个已构建的 Harness 基线工作树，运行 `npm run test:smoke -- /path/to/built/deepseek-harness`。本地启动见部署文档。
 
-下一轮设计评审见 [M1 会话恢复与交付提交](docs/design/M1-RECOVERY-AND-SUBMISSION.md)。
+M1 的联调场景见 [会话恢复与交付提交](docs/design/M1-RECOVERY-AND-SUBMISSION.md)。
