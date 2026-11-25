@@ -27,6 +27,7 @@
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
+| `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
