@@ -39,6 +39,8 @@ DEV-004 提交 `7ffbed8` 提供 `src/harness/session-observation.mjs` 的已绑�
 
 DEV-004 提交 `f28b8dd` 提供 `src/harness/session-lifecycle.mjs` 的 `stopBoundRootSession`。应用层只在调用返回 `stopped` 后继续核对 revision 并提交暂停或取消；会话仍运行、等待超时或等待用户输入时不改变任务状态。9 项测试及差异门禁通过，真实 Host 冒烟覆盖挂载后的冷会话停止确认。应用层暂停和取消入口仍待接线。
 
+DEV-004 提交 `44f45be`、`c426799` 提供 `src/harness/session-start.mjs` 的 `startReservedRootSession`。该入口在原生创建前调用内部 `claimStart`，只有一次性领取获准才发起创建；成功返回已核验的根会话和初始事件游标，挂载失败或结果不明保留待核对。13 项回归和真实 Host 冒烟通过。DEV-012 的应用层启动编排可复用此入口，生产领取和回执仍须接入原生存储。联调时同一启动意图只走一条原生创建路径。
+
 DEV-007 提交 `afdcc88`，已实现阶段内展示选择、产物来源与 SHA-256 版本、重验和可信检查证据转换。仓库门禁及 10 项测试通过。保持 active，剩余工作为接入 DEV-004 的可信会话事件和授权，并验证原生 present 到提交的实际链路。
 
 DEV-006 提交 `d8076be`，在应用联调分支接入 DEV-005 与 DEV-007。原生 JSON 后端和本地文件试验已覆盖意图跨重开、有效根会话核验输入、用户改选、模型角色隔离、幂等提交、文件漂移、退回与接受，10 项回归和仓库门禁通过。保持 active，等待 DEV-004 的真实 Host 生命周期接入，再补阶段游标、Remote 和 DEV-012 实际联调。跨模块接入可以参考该分支，原工单分支继续独立开发。
