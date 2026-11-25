@@ -12,9 +12,14 @@ const checkout = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url)))
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
 const reviewProbeFlag = '--review-recovery-regressions'
+const legacyCheckoutFlag = '--review-profile-upgrade-from='
+const legacyCheckoutOption = process.argv.slice(3).find(arg => arg.startsWith(legacyCheckoutFlag))
+const legacyCheckout = legacyCheckoutOption?.slice(legacyCheckoutFlag.length)
+if (legacyCheckoutOption) assert.ok(legacyCheckout, 'Supply an installed legacy Workbench checkout')
 const reviewProbes = ['cold-root', 'reconcile-receipt', 'forward-scope']
 const forwardRefusalProbe = 'forward-pre-admission'
 const probeOption = process.argv.slice(3).find(arg => arg === reviewProbeFlag || arg.startsWith(reviewProbeFlag + '='))
+assert.ok(!(legacyCheckoutOption && probeOption), 'Run the profile upgrade and review recovery probes separately')
 const selectedProbes = probeOption === reviewProbeFlag ? reviewProbes
   : probeOption ? [probeOption.slice(reviewProbeFlag.length + 1)] : []
 for (const probe of selectedProbes) assert.ok(
@@ -137,10 +142,10 @@ async function until(read, description, timeout = 25_000) {
   throw new Error(`Unable to verify ${description} (Host: ${exit})\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
 }
 
-async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
+async function start(probe = {}, { workbench = true, dataHome = data, overlay = patch } = {}) {
   output = ''
   child = spawn(process.execPath, [
-    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', ...(workbench ? ['--patch', patch] : []),
+    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', ...(workbench ? ['--patch', overlay] : []),
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
     cwd: checkout,
@@ -201,6 +206,93 @@ async function stop(signal = 'SIGTERM') {
 }
 
 const hash = text => createHash('sha256').update(text).digest('hex')
+
+async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
+  const { task } = await rpc.workbench('task.create', brief)
+  const taskId = task.id
+  const ready = await rpc.workbench('task.ready', { taskId, requestId: 'ready', expectedRevision: task.revision })
+  const active = await rpc.workbench('task.start', { taskId, requestId: 'start', expectedRevision: ready.task.revision })
+  const { rootSessionId: sessionId, id: runId } = active.runs[0]
+  const sessionAddress = { kind: 'session', sessionId }
+  const userEvents = async () => (await rpc('session/events', { address: sessionAddress, maxMessages: 100 }))
+    .records.map(({ event }) => event).filter(event => event.type === 'user/message')
+  const byId = async id => (await userEvents()).filter(event => event.data.source?.rpcId === id)
+  const waitIdle = () => until(async () => {
+    const state = await rpc('session/state', { sessionId })
+    return !state.running && state.queue?.length === 0
+  }, 'review upgrade session returns to idle')
+  const snapshot = async () => ({
+    detail: await rpc.workbench('task.get', { taskId }),
+    reviews: await rpc.workbench('task.reviews', { taskId }),
+    sessions: (await rpc('session/list', {})).items.map(item => item.sessionId).sort(),
+    events: await userEvents(),
+  })
+  const parentPrompt = { taskId, expectedRevision: active.task.revision, requestId: 'parent',
+    text: 'Prepare the legacy review session' }
+  await rpc.workbench('task.prompt', parentPrompt)
+  await waitIdle()
+  releaseReview()
+  const review = await rpc.workbench('task.delegate', { taskId,
+    expectedRevision: (await rpc.workbench('task.get', { taskId })).task.revision,
+    requestId: 'review', instruction: 'Review the selected material', material: 'review isolation probe' })
+  assert.equal(review.summary, 'independent review')
+  const common = { taskId, expectedRevision: (await rpc.workbench('task.get', { taskId })).task.revision }
+  const forward = { ...common, requestId: 'legacy-forward', reviewId: review.reviewId }
+  const ordinary = { ...common, requestId: 'review-forward:legacy-ordinary', text: 'Ordinary legacy prompt' }
+  const legacyId = requestId => 'workbench-' + hash(JSON.stringify([taskId, runId, requestId]))
+  const legacyForwardId = legacyId(`review-forward:${forward.requestId}`)
+  const ordinaryId = legacyId(ordinary.requestId)
+  const ack = { sessionId, accepted: true }
+  assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
+  assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
+  await until(async () => (await byId(legacyForwardId)).length === 1 && (await byId(ordinaryId)).length === 1,
+    'legacy plugin commits the actual forward and ordinary prompt')
+  await waitIdle()
+  const [legacyEvent] = await byId(legacyForwardId)
+  assert.ok(legacyEvent.data.content.some(block => block.type === 'text' && block.text.includes(review.reviewId)))
+  const before = await snapshot()
+  const beforeReadRequests = allModelRequests
+
+  await stop()
+  const backup = join(root, 'legacy-profile-backup')
+  await cp(data, backup, { recursive: true })
+  rpc = await start()
+  assert.deepEqual(await snapshot(), before)
+  assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
+  assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
+  const conflicting = { ...forward, requestId: 'legacy-ordinary' }
+  assert.equal((await rpc.workbench('task.review.forward', conflicting, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  assert.deepEqual(await snapshot(), before)
+  assert.equal(allModelRequests, beforeReadRequests)
+
+  const newForward = { ...conflicting, requestId: 'forward-after-upgrade' }
+  const newId = 'workbench-review-forward-v2-' + hash(JSON.stringify([taskId, runId, newForward.requestId]))
+  assert.deepEqual(await rpc.workbench('task.review.forward', newForward), ack)
+  await until(async () => (await byId(newId)).length === 1, 'upgraded plugin commits a fresh forward')
+  await waitIdle()
+  const upgraded = await snapshot()
+  assert.equal(upgraded.detail.task.revision, before.detail.task.revision + 2)
+  const afterWriteRequests = allModelRequests
+  await stop()
+
+  const restored = join(root, 'legacy-profile-restored')
+  await cp(backup, restored, { recursive: true })
+  rpc = await start({}, { dataHome: restored, overlay: legacyPatch })
+  assert.deepEqual(await snapshot(), before)
+  assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
+  assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
+  assert.deepEqual(await snapshot(), before)
+  assert.equal(allModelRequests, afterWriteRequests)
+  await stop()
+
+  rpc = await start()
+  assert.deepEqual(await snapshot(), upgraded)
+  assert.deepEqual(await rpc.workbench('task.review.forward', newForward), ack)
+  assert.equal((await byId(newId)).length, 1)
+  assert.equal(allModelRequests, afterWriteRequests)
+  console.log('PASS: real legacy forward and ordinary prompt survive profile upgrade and independent backup rollback.')
+}
+
 hostSmoke: try {
   await writeFile(usagePolicy, JSON.stringify({
     rates: [{ provider: 'deepseek-official', model: 'deepseek-flash', currency: 'CNY', rateDate: '2020-01-01',
@@ -215,7 +307,12 @@ hostSmoke: try {
   await writeFile(patch, `\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`, { flag: 'a' })
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
-  let rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
+  let legacyPatch
+  if (legacyCheckout) {
+    legacyPatch = join(root, 'legacy.patch.yml')
+    execFileSync(process.execPath, [resolve(legacyCheckout, 'scripts/source-overlay.mjs'), checkout, legacyPatch, usagePolicy])
+  }
+  let rpc = legacyPatch ? await start({}, { overlay: legacyPatch }) : await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
   const page = await rpc.page('/workbench')
   assert.equal(page.status, 200)
   assert.match(page.headers.get('content-security-policy'), /script-src 'self'/)
@@ -231,6 +328,10 @@ hostSmoke: try {
     requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
     goal: 'Verify task persistence', criteria: [{ id: 'facts', description: 'Check sources' }],
     deliverables: ['second.md'], materials: [{ kind: 'file', locator: 'first.md', observedAt: '2025-01-01T00:00:00Z' }],
+  }
+  if (legacyPatch) {
+    await verifyProfileUpgrade(rpc, brief, legacyPatch)
+    break hostSmoke
   }
   await rpc.workbench('task.create', brief, { anonymous: true, status: 401 })
   await rpc.workbench('task.create', brief, { origin: 'https://untrusted.example', status: 403 })
