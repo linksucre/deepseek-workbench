@@ -27,4 +27,4 @@ DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path
 
 三项审阅恢复专项均纳入 Harness integration CI。原生测试注入回送已受理后的响应丢失，并用独立 profile 重启核对真实旧事件。Chromium 验证浏览器丢失响应后重新加载并复用原输入。
 
-待评审的入队前拒绝回归使用独立参数 `--review-recovery-regressions=forward-pre-admission`。测试在真实 Host 的原生提示入口、入队调用前注入带 `session/not-found` 的结构化拒绝。核对原始原生请求 ID 无消息、无模型调用，重启后重放同一公开请求取得相同失败且 revision 保持稳定，随后能暂停、恢复并用新请求 ID 回送一次。该专项独立运行，待实现转绿后纳入 CI。
+入队前拒绝回归在 CI 使用独立参数 `--review-recovery-regressions=forward-pre-admission`。测试在真实 Host 的原生提示入口、入队调用前注入带 `session/not-found` 的结构化拒绝。核对原始原生请求 ID 无消息、无模型调用，重启后重放同一公开请求取得相同失败且 revision 保持稳定，修改输入重放返回 `INVALID`，随后能暂停、恢复并用新请求 ID 回送一次。

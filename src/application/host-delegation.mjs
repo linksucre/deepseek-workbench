@@ -20,6 +20,7 @@ function receipt(events) {
 }
 
 const forwardConflict = () => new TaskError('RECONCILIATION_REQUIRED', 'Check the original conversation before retrying this review forward')
+const forwardRefused = () => new TaskError('INVALID_TRANSITION', 'The original conversation rejected the forward before queuing. Check the session and send a new request.')
 const forwardAck = sessionId => ({ sessionId, accepted: true })
 const nativeDigest = (taskId, runId, requestId) => createHash('sha256')
   .update(JSON.stringify([taskId, runId, requestId])).digest('hex')
@@ -105,17 +106,18 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
     }
   }
 
-  async function confirmForward(principal, taskId, forward) {
+  async function confirmForward(principal, taskId, forward, outcome) {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const { detail } = await load(principal, taskId)
       try {
         await app.confirmReviewForward(principal, {
           taskId, requestId: forward.nativeId, expectedRevision: detail.task.revision,
-        }, forward)
-        return forwardAck(forward.sessionId)
+        }, forward, outcome)
       } catch (error) {
         if (error.code !== 'REVISION_CONFLICT') throw error
+        continue
       }
+      return
     }
     throw forwardConflict()
   }
@@ -197,6 +199,7 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
           // The operation receipt compares the complete input before using any native data.
           await app.beginReviewForward(principal, input)
           if (previous.status === 'accepted') return forwardAck(previous.sessionId)
+          if (previous.status === 'rejected') throw forwardRefused()
         }
         const review = findReview(record, input.reviewId)
         const { runId } = review
@@ -209,7 +212,8 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
         return conversation.withSession(principal, record.detail, sessionId, async ({ events }, timeout) => {
           if (previous) {
             if (promptReceipt(events, previous.nativeId) !== text) throw forwardConflict()
-            return confirmForward(principal, taskId, previous)
+            await confirmForward(principal, taskId, previous, 'accepted')
+            return forwardAck(sessionId)
           }
           const throughSeq = record.stages.find(stage => stage.runId === runId)?.legacyForwardThrough
           if (!Number.isSafeInteger(throughSeq)) throw forwardConflict()
@@ -224,10 +228,16 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
           const pending = (await load(principal, taskId)).reviewForwards.find(ownForward)
           try {
             await conversation.queueMessage({ sessionId, requestId: nativeId, text }, timeout)
-          } catch {
+          } catch (error) {
+            // The pinned native prompt resolves its session before it admits the message.
+            if (error?.code === 'session/not-found') {
+              await confirmForward(principal, taskId, pending, 'rejected')
+              throw forwardRefused()
+            }
             throw forwardConflict()
           }
-          return confirmForward(principal, taskId, pending)
+          await confirmForward(principal, taskId, pending, 'accepted')
+          return forwardAck(sessionId)
         })
       })
     },

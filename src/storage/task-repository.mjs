@@ -33,7 +33,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
   })
   const reviewForward = z.strictObject({
     actorId: text, requestId: text, reviewId: text, runId: text,
-    sessionId: text, nativeId: text, status: z.enum(['pending', 'accepted']),
+    sessionId: text, nativeId: text, status: z.enum(['pending', 'accepted', 'rejected']),
   })
   const schema = z.strictObject({
     schemaVersion: z.literal(1),

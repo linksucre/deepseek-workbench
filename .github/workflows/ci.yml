@@ -54,6 +54,8 @@ jobs:
       - run: node tests/integration/storage-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/application-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" --review-recovery-regressions
+      - name: Verify a confirmed forward refusal
+        run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" --review-recovery-regressions=forward-pre-admission
       - run: node tests/integration/usage-host-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Verify persisted task context
         run: node tests/integration/context-smoke.mjs "$GITHUB_WORKSPACE/upstream"

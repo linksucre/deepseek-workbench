@@ -629,21 +629,26 @@ hostSmoke: try {
       return native.records.filter(({ event }) => event.type === 'user/message' &&
         event.data.source?.rpcId === nativeId(requestId)).length
     }
-    const refusalStatus = { status: [400, 404, 409] }
+    const refusalStatus = { status: 409 }
     await writeFile(forwardRefusal, nativeId(refused.requestId))
     const refusal = await rpc.workbench('task.review.forward', refused, refusalStatus)
+    assert.equal(refusal.code, 'INVALID_TRANSITION')
     await assert.rejects(readFile(forwardRefusal), { code: 'ENOENT' })
     assert.equal(await nativeCount(refused.requestId), 0)
     const afterRefusal = await rpc.workbench('task.get', { taskId })
     await stop()
     rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
     assert.deepEqual(await rpc.workbench('task.review.forward', refused, refusalStatus), refusal)
+    const changed = await rpc.workbench('task.review.forward', {
+      ...refused, expectedRevision: afterRefusal.task.revision,
+    }, { status: 400 })
+    assert.equal(changed.code, 'INVALID')
     assert.equal(await nativeCount(refused.requestId), 0)
     assert.equal((await rpc.workbench('task.get', { taskId })).task.revision, afterRefusal.task.revision)
     assert.equal(allModelRequests, beforeReplay)
     const paused = await rpc.workbench('task.pause', {
       taskId, requestId: 'pause-after-refused-forward', expectedRevision: afterRefusal.task.revision,
-    }, { status: [200, 409] })
+    })
     assert.equal(paused.task?.status, 'paused',
       `Confirmed pre-admission refusal must allow task pause after restart; received ${paused.code ?? paused.task?.status}`)
     const resumed = await rpc.workbench('task.resume', {

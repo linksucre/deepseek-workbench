@@ -91,7 +91,7 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       if (command.kind === 'begin-review-forward') reviewForwards = [...reviewForwards, command.forward]
       if (command.kind === 'confirm-review-forward') {
         reviewForwards = reviewForwards.map(forward => forward.requestId === command.forward.requestId &&
-          forward.actorId === command.forward.actorId ? { ...forward, status: 'accepted' } : forward)
+          forward.actorId === command.forward.actorId ? { ...forward, status: command.outcome } : forward)
       }
       const detail = evolveTask(current.detail, command, { expectedRevision: input.expectedRevision, now })
       let stages = current.stages
@@ -301,15 +301,15 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       })
     },
 
-    confirmReviewForward(principal, input, forward) {
+    confirmReviewForward(principal, input, forward, outcome) {
       return mutate(principal, 'task.review.forward.confirm', input, record => {
         if (!record.reviewForwards.some(item => item.actorId === user(principal) &&
           item.requestId === forward.requestId && item.reviewId === forward.reviewId &&
           item.nativeId === forward.nativeId && item.status === 'pending')) {
           reject('RECONCILIATION_REQUIRED', 'Review forward no longer matches its native request')
         }
-        return { kind: 'confirm-review-forward', forward }
-      }, { payload: forward })
+        return { kind: 'confirm-review-forward', forward, outcome }
+      }, { payload: { forward, outcome } })
     },
 
     finishLifecycle(principal, input, kind) {
