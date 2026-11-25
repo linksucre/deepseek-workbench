@@ -22,6 +22,9 @@ const templateText = {
   writing: ['可编辑正文', '符合目标受众与语气\n核查关键事实'],
   documents: ['可编辑材料\n来源清单', '核对关键事实和数据\n标注来源及缺失信息'],
 }
+const domains = {
+  development: '代码开发', design: '设计', writing: '写作', research: '调研', documents: '材料',
+}
 const methods = {
   direct: '直接执行', 'direction-review': '先审方向', 'verify-first': '先查证', reuse: '复用已有流程',
 }
@@ -203,8 +206,10 @@ function renderDetail() {
   }
   detail.replaceChildren(head, node('p', task.goal, 'goal'), actions, section('任务要求', brief))
   if (task.choice) {
-    detail.append(section('执行方式', node('p', task.choice.methods.map(key => methods[key] ?? key).join('、')),
-      node('p', task.choice.reason), node('span', task.choice.source === 'user' ? '用户选定' : 'Agent 建议', 'subtle')))
+    detail.append(section('执行方式', node('p', methodLabels(task.choice)),
+      node('p', task.choice.reason, 'choice-text'),
+      ...(task.choice.skillIds.length ? [node('p', task.choice.skillIds.join('、'), 'choice-text')] : []),
+      node('span', task.choice.source === 'user' ? '用户选定' : 'Agent 建议', 'subtle')))
   }
   if (['draft', 'ready', 'active', 'paused'].includes(task.status)) detail.append(choiceEditor(task))
   if (run?.rootSessionId) {
@@ -448,7 +453,12 @@ function conversationPanel(task, metadata) {
         task.title, task.goal, `交付物：${task.deliverables.join('；')}`,
         `验收条件：${task.criteria.map(criterion => criterion.description).join('；')}`,
         ...(task.materials.length ? [`材料：${task.materials.map(item => item.locator).join('；')}`] : []),
-        '请先选择做法，交付时使用 present 和 workbench_submit。',
+        ...(task.choice ? [
+          `执行方式（${task.choice.source === 'user' ? '用户选定' : 'Agent 建议'}）：${methodLabels(task.choice)}`,
+          `依据：${task.choice.reason}`,
+          ...(task.choice.skillIds.length ? [`技能 ID：${task.choice.skillIds.join('；')}`] : []),
+        ] : ['请先选择做法。']),
+        '交付时使用 present 和 workbench_submit。',
       ].join('\n')
       text.focus()
     }))
@@ -471,27 +481,66 @@ function conversationPanel(task, metadata) {
   return area
 }
 
+function methodLabels(choice) {
+  return choice.methods.map(key => methods[key]).join('、')
+}
+
 function choiceEditor(task) {
-  const form = node('form', undefined, 'actions')
-  const select = node('select')
-  select.setAttribute('aria-label', '执行方式')
-  for (const [value, label] of Object.entries(methods)) {
+  const form = node('form', undefined, 'choice-form')
+  const domainField = node('label', '任务类型', 'field')
+  const domain = node('select')
+  domain.required = true
+  const placeholder = node('option', '请选择任务类型')
+  placeholder.value = ''
+  placeholder.disabled = true
+  domain.append(placeholder)
+  for (const [value, label] of Object.entries(domains)) {
     const option = node('option', label)
     option.value = value
-    select.append(option)
+    domain.append(option)
   }
-  if (task.choice?.methods.length) select.value = task.choice.methods[0]
-  const reason = node('input')
-  reason.setAttribute('aria-label', '改选理由')
-  reason.placeholder = '改选理由'
-  reason.required = true
+  domain.value = task.choice?.domain ?? ''
+  domainField.append(domain)
+
+  const selectedMethods = new Set(task.choice?.methods ?? [])
+  const options = node('fieldset', undefined, 'choice-options')
+  options.append(node('legend', '执行方式'))
   const save = node('button', '保存执行方式')
-  form.append(select, reason, save)
+  save.disabled = selectedMethods.size === 0
+  for (const [value, label] of Object.entries(methods)) {
+    const field = node('label', label)
+    const checkbox = node('input')
+    checkbox.type = 'checkbox'
+    checkbox.checked = selectedMethods.has(value)
+    field.prepend(checkbox)
+    options.append(field)
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedMethods.add(value)
+      else selectedMethods.delete(value)
+      save.disabled = selectedMethods.size === 0
+    })
+  }
+
+  const reasonField = node('label', '改选理由', 'field')
+  const reason = node('textarea')
+  reason.required = true
+  reason.rows = 2
+  reason.maxLength = 8192
+  reasonField.append(reason)
+  const skillsField = node('label', '技能 ID（每行一个，可选）', 'field')
+  const skills = node('textarea')
+  skills.rows = 2
+  skills.value = task.choice?.skillIds.join('\n') ?? ''
+  skillsField.append(skills)
+
+  const actions = node('div', undefined, 'actions')
+  actions.append(save)
+  form.append(domainField, options, reasonField, skillsField, actions)
   form.addEventListener('submit', event => {
     event.preventDefault()
     void taskAction('task.choose', { choice: {
-      domain: task.choice?.domain ?? 'documents', methods: [select.value], source: 'user',
-      reason: reason.value.trim(), skillIds: task.choice?.skillIds ?? [],
+      domain: domain.value, methods: [...selectedMethods], source: 'user',
+      reason: reason.value.trim(), skillIds: lines(skills.value),
     } })
   })
   return section('选择做法', form)

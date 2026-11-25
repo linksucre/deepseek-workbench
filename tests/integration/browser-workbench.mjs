@@ -167,7 +167,20 @@ try {
   const goalStart = '材料检索与核验\n<review>'
   const goalEnd = '</review>'
   const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
-  async function create(title, template, goal = '交付并核查该工作', criteria) {
+  async function choose(domain, labels, reason, skill = '') {
+    const taskType = page.getByLabel('任务类型')
+    await taskType.waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+    await taskType.selectOption(domain)
+    const choices = page.getByRole('group', { name: '执行方式' })
+    for (const label of labels) await activate(choices.getByRole('checkbox', { name: label }), 'Space')
+    await page.getByLabel('改选理由').fill(reason)
+    if (skill) await page.getByLabel(/技能 ID/).fill(skill)
+    await activate(button('保存执行方式'))
+    await page.getByText(reason, { exact: true }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+  }
+  async function create(title, template, { goal = '交付并核查该工作', criteria, afterStart } = {}) {
     await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
     await tabTo(page.getByLabel('标题'))
@@ -180,12 +193,19 @@ try {
     await activate(button('标为就绪'))
     await activate(button('启动 Agent 会话'))
     const conversation = page.getByRole('region', { name: '执行会话' })
+    await conversation.waitFor()
+    if (afterStart) await afterStart()
     await activate(page.getByRole('link', { name: '查看执行会话' }))
     assert.equal(await conversation.evaluate(element => element === document.activeElement), true)
     await activate(button('填入任务说明'))
     const prompt = page.getByLabel('发给 Agent')
     assert.equal(await prompt.evaluate(element => element === document.activeElement), true)
-    assert.ok((await prompt.inputValue()).includes(goal))
+    const draftPrompt = await prompt.inputValue()
+    assert.ok(draftPrompt.includes(goal))
+    if (afterStart) {
+      assert.match(draftPrompt, /用户选定.*直接执行、复用已有流程/)
+      assert.match(draftPrompt, /技能 ID：fixture-check/)
+    }
     await activate(button('发送'))
   }
   async function waitReview() {
@@ -205,7 +225,9 @@ try {
     }
     await activate(button('接受提交'))
   }
-  await create('browser code task', 'development')
+  await create('browser code task', 'development', {
+    afterStart: () => choose('development', ['直接执行', '复用已有流程'], '沿用已验证的开发流程', 'fixture-check'),
+  })
   await waitReview()
   await page.locator('main').getByText('code.md', { exact: true }).waitFor()
   const evidence = page.locator('.submission-evidence')
@@ -252,7 +274,7 @@ try {
   await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
   await page.getByText(/估算费用：CNY 0\./).waitFor()
 
-  await create('browser material task', 'documents', longGoal)
+  await create('browser material task', 'documents', { goal: longGoal })
   await waitReview()
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
@@ -268,7 +290,11 @@ try {
   assert.equal(await longText.locator('review').count(), 0)
   await page.getByLabel('退回理由').fill('请重新展示修改后的版本')
   await activate(button('退回修改'))
-  await page.getByLabel('发给 Agent').fill('browser material revision')
+  await choose('research', ['先审方向', '先查证'], '退回后先确认方向和资料来源')
+  await activate(button('填入任务说明'))
+  const materialPrompt = page.getByLabel('发给 Agent')
+  assert.match(await materialPrompt.inputValue(), /用户选定.*先审方向、先查证/)
+  await materialPrompt.fill('browser material revision')
   await button('发送').click()
   await waitReview()
   await accept()
@@ -286,7 +312,7 @@ try {
   await page.getByText('已发给主 Agent', { exact: true }).waitFor()
   assert.equal(independentReviewRequests, 1)
 
-  await create(checkedTitle, 'development', '交付 JSON', 'JSON 格式有效\n与任务主题相符')
+  await create(checkedTitle, 'development', { goal: '交付 JSON', criteria: 'JSON 格式有效\n与任务主题相符' })
   await waitReview()
   const currentEvidence = page.locator('.submission-evidence').first()
   await currentEvidence.locator('summary').click()
@@ -320,7 +346,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
