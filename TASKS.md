@@ -4,8 +4,8 @@
 
 | 工单 | 需求 | 主责目录 | 依赖 | 状态 | 完成产物 |
 | --- | --- | --- | --- | --- | --- |
-| DEV-001 | FR-001 | src/preset | — | done | 预设及模拟模型集成通过 |
-| DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、验证门禁与 PR 流程 |
+| DEV-001 | FR-001 | src/preset | — | done | 预设及模拟模型集成通过，逐项验证预设必需工具 |
+| DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、契约元模式、负例回归与受保护 PR 流程 |
 | DEV-003 | FR-002 | src/domain | DEV-002 | planned | 纯状态机、领域测试与契约校验 |
 | DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | planned | 兼容试验、会话绑定、授权及故障恢复 |
 | DEV-005 | NFR-003 | src/storage | DEV-003 | planned | 数据域、幂等回执、备份与恢复测试 |

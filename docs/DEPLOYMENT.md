@@ -3,7 +3,7 @@
 要求 Node 24.22.3、基线指定提交的 Harness 和它要求的 pnpm。上游目录与本仓库分别管理。
 
 1. 根据 [harness-baseline.json](../harness-baseline.json) 准备上游干净 checkout，执行 `corepack pnpm install --frozen-lockfile` 和 `corepack pnpm run build`。
-2. 在本仓库执行 `npm run check`，再执行 `npm run test:smoke -- /path/to/built/deepseek-harness`。
+2. 在本仓库执行 `npm ci` 与 `npm run check`，再执行 `npm run test:smoke -- /path/to/built/deepseek-harness`。
 3. 在构建后的 Harness checkout 执行下列命令。补丁地址填写本仓库的真实绝对路径。
 
 ```sh
