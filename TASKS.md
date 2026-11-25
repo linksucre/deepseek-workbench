@@ -42,6 +42,7 @@
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence` | 提交时用宿主固定检查校验已选产物与版本，复验 TST-004 的机器结果和人工确认 |
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-006` | Codex | `dev/DEV-006-start-timeout` | 基于 `dac36f6` 处理原生创建超时、迟到回执与 TST-003 冒烟 |
+| `DEV-006` | Codex | `dev/DEV-006-reconcile-replay` | 基于 `a2453a6` 修复既有启动核对操作的请求 ID 作用域，保留历史回执 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
