@@ -65,6 +65,7 @@
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-workspace-selection` | 从 `8ad4e9b` 修复慢请求期间连续切换工作区造成的旧列表与详情，运行 Chromium 红绿复验 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-lifecycle-browser-verification` | 从 `99f1668` 补验真实浏览器暂停、恢复和取消入口 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-write-replay-browser` | 从 `4a8434d` 补验浏览器写入成功后丢失响应的幂等恢复 |
+| `DEV-008` | Codex | `dev/DEV-008-review-forward-refusal` | 从 `ec56327` 验证明确回送拒绝后浏览器刷新 revision 并可直接重试，仅修改 Web、对应测试及说明 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-pagination-browser` | 从 `aa97c43` 验证浏览器键盘分页、最后一页和工作区切换后的游标 |
 | `DEV-008` | Codex | `dev/DEV-008-pagination-verification` | 从 `99f1668` 补验 3000 条任务跨页同时间排序、完整遍历及现有阈值 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
@@ -242,5 +243,9 @@ DEV-011 `7064604` 修复冷根派发、显式核对摘要及回送原生 ID 作�
 汇总候选 `integration/workbench-receipts-candidate`（行为 `bb9324c`，证据 `0907c9a`）保留另一协作者的 `8fde87b`，合并任务启动核对回执、资料身份、分页和退回恢复测试。27 项回归、相对 main 差异门禁、actionlint、真实 Harness 全链路、原生 worktree 和独立归档 Chromium 均通过。本机 3000 条任务完成 60 页核验，热读首页 p95 7.69 ms。正式发布仍受公共设计评审、TST-005 真实模型授权及 CI 可获取基线约束。
 
 DEV-011 `a6bc29f` 补上 TST-010 双版本 profile 验证。从旧插件 `8fde87b` 实际写入回送及普通消息，用新候选 `0907c9a` 打开后核对任务、审阅、会话及消息不变，旧请求重放和冲突分支无新模型请求。升级后的新回送只受理一次。独立备份副本用旧插件回退后可重放旧请求，原升级副本重启后仍可重放新请求。固定 Harness 和模拟模型下专项通过，27 项回归及对 main 的仓库门禁通过。明确入队前拒绝仍按 `284fe3e` 单独评审。
+
+DEV-011 联调提交 `64df257` 实现明确拒绝后的持久失败回执，`ec56327` 合入双版本 profile 验证。从 `ec56327` 独立复跑真实 Host，明确拒绝可原输入冷重放、变更输入被拒绝，任务可暂停、恢复并用新 ID 回送。双版本升级和备份回退专项同时通过。存储设计仍待正式评审。
+
+DEV-008 `59c165d` 在 `ec56327` 上复现 Host 已明确拒绝回送后，页面仍用旧 revision、第二次点击返回 409。`86dfdef` 修复该错误路径的任务详情刷新。独立安装包的 Chromium 全流程通过，验证第二次点击用最新 revision 和新 ID 成功；截断该成功响应后，重新加载仍按同一输入核对。27 项回归和仓库门禁通过。两个提交分开，联调分支若已有等价浏览器用例可只接入实现及文档提交。
 
 DEV-011 入队前拒绝修复 `64df257` 已合入 `integration/workbench-receipts-candidate`。合并双版本测试后的候选 `ec56327` 通过 27 项回归、差异文档门禁、actionlint、真实 Host 完整审阅链路和双版本升级及备份回退。独立拒绝专项验证原请求跨重启只读重放、改输入拒绝、无模型调用、任务可暂停恢复、后续新请求只入队一次。已受理但丢回执仍由原生记录核对。DEV-008 的浏览器拒绝后重试由已登记的独立分支继续验证。
