@@ -46,6 +46,7 @@
 | `DEV-006` | Codex | `dev/DEV-006-start-timeout` | 基于 `dac36f6` 处理原生创建超时、迟到回执与 TST-003 冒烟 |
 | `DEV-006` | Codex | `dev/DEV-006-reconcile-replay` | 基于 `a2453a6` 修复既有启动核对操作的请求 ID 作用域，保留历史回执 |
 | `DEV-006` | Codex | `dev/DEV-006-forward-error-provenance` | 从 `c2487a0` 校验回送只识别同一根会话的结构化原生拒绝，范围为应用层、TST-010 用例及说明 |
+| `DEV-006` | Codex | `dev/DEV-006-conversation-unicode` | 从 `9fde880` 修正任务对话和审阅结论的 8192 字符边界，范围为应用层、真实 Host 回归及说明 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
@@ -265,3 +266,5 @@ DEV-002 在本地候选 `a373791` 合入 `b132967`，验收记录 `a94549c`。�
 DEV-005 `65624be` 补齐 TST-007 的双任务写入队列快照和备份复读。固定 Harness 的原生 JSON 后端核对两份快照的任务顺序、revision 与回执，修改导出副本不影响存储，备份重开后内容一致。真实 Host 从停写后的独立备份恢复回送失败回执，可重放失败、暂停恢复并用新 ID 回送一次，原 profile 的任务文件字节保持不变。两项专项、27 项回归、仓库门禁和 actionlint 通过。本地候选已快进至该测试和文档提交。
 
 DEV-010 `9fde880` 修复会话资料读取在 8192 字符边界截断 emoji 的问题。本地上下文回归使用固定 Harness 的原生存储和受控会话事件，旧实现返回半个字符，修复后按 Unicode 字符计数并保留完整 emoji。真实 Host 完整冒烟和三项审阅专项、27 项回归、仓库门禁、actionlint 同时通过。本地候选已快进至该提交，公共资料接口仍待评审。
+
+DEV-006 `6aa9aee` 修复任务对话和新结算审阅摘要的 Unicode 字符边界。本地模拟模型配合真实 Host，实测用户消息在 8192 字符边界的 emoji 从截断到完整回显，审阅结果在断开并重启核对后保留同一边界字符。完整 Host、明确拒绝和备份恢复、双版本升级回退、27 项回归、仓库门禁及 actionlint 通过，本地候选已更新。
