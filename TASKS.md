@@ -298,3 +298,5 @@ DEV-011 `81f58ef` 在相同隔离专项补验固定 Harness 原生去重。测�
 DEV-011 `7187dee` 补验 owner 在消费前移除原生队列消息。停写重启后以原 ID 和正文重放，返回历史受理回执，队列仍为空，没有新增对话消息或模型调用。再次复跑完整历史的单次入队与 Workbench 一次结算，以及 27 项回归和仓库门禁，均通过。恢复语义继续待评审。远端已出现 [DEV-011 PR #1](https://github.com/linksucre/deepseek-workbench/pull/1) 与 [DEV-010 PR #2](https://github.com/linksucre/deepseek-workbench/pull/2)，仍待审批；此轮本地新增证据独立保留。
 
 DEV-011 `8bfe5f3` 在独立备份上验证回送核对的两条失败路径。已入队且尚未结算的回送遇到注入的历史读失败返回 503；观察期间移除工作区会话绑定返回 404。两次任务记录字节、原生发送和模型请求均无新增或变化；恢复可读历史和原授权后原输入结算一次。完整可读历史去重、队列移除、27 项回归、仓库和差异门禁通过。远端 DEV-010 [CI 45650898210](https://github.com/linksucre/deepseek-workbench/actions/runs/45650898210) 通过，DEV-011 集成仍运行，两份设计仍待人工审批。
+
+DEV-011 本地评审分支 `4cc8e91` 将持续待核对、跨重启去重、队列移除和撤权的验证证据集中到单个文档提交，通过相对远端 `main` 的差异门禁。远端 [DEV-011 PR #1](https://github.com/linksucre/deepseek-workbench/pull/1) 仍为原设计版本。远端新增 [DEV-005 PR #3](https://github.com/linksucre/deepseek-workbench/pull/3)，与 DEV-011 一样已通过仓库门禁、正在运行 Harness 集成。DEV-010 两项检查通过。三个 PR 均待人工评审。
