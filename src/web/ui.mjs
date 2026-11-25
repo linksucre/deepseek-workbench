@@ -283,7 +283,7 @@ function handoffPanel(handoff) {
   area.append(node('h3', '阶段交接'))
   const stage = handoff.stage ? `阶段开始于 ${new Date(handoff.stage.openedAt).toLocaleString('zh-CN')}` : '尚未开始执行阶段'
   const method = handoff.choice
-    ? `执行方式：${methodLabels(handoff.choice)}` : ''
+    ? `执行方式：${choiceMethods(handoff.choice)}` : ''
   const latest = handoff.lastSubmission
     ? `最近提交于 ${new Date(handoff.lastSubmission.submittedAt).toLocaleString('zh-CN')}` : ''
   const outcome = handoff.lastDecision?.verdict === 'return' ? `退回原因：${handoff.lastDecision.reason}`
