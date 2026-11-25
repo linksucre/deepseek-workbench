@@ -300,3 +300,10 @@ DEV-011 `7187dee` 补验 owner 在消费前移除原生队列消息。停写重�
 DEV-011 `8bfe5f3` 在独立备份上验证回送核对的两条失败路径。已入队且尚未结算的回送遇到注入的历史读失败返回 503；观察期间移除工作区会话绑定返回 404。两次任务记录字节、原生发送和模型请求均无新增或变化；恢复可读历史和原授权后原输入结算一次。完整可读历史去重、队列移除、27 项回归、仓库和差异门禁通过。远端 DEV-010 [CI 45650898210](https://github.com/linksucre/deepseek-workbench/actions/runs/45650898210) 通过，DEV-011 集成仍运行，两份设计仍待人工审批。
 
 DEV-011 本地评审分支 `4cc8e91` 将持续待核对、跨重启去重、队列移除和撤权的验证证据集中到单个文档提交，通过相对远端 `main` 的差异门禁。远端 [DEV-011 PR #1](https://github.com/linksucre/deepseek-workbench/pull/1) 仍为原设计版本。远端新增 [DEV-005 PR #3](https://github.com/linksucre/deepseek-workbench/pull/3)，与 DEV-011 一样已通过仓库门禁、正在运行 Harness 集成。DEV-010 两项检查通过。三个 PR 均待人工评审。
+
+#### 受保护主分支收敛
+
+- 主分支 `e252c32`：Node 24.22.3、`actionlint`、仓库检查及基于公开 Harness `4b399c39a6` 的预设冒烟通过。[托管 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839/attempts/2) 已复证上游依赖获取、构建与预设加载。M0 主分支尚无工作台任务状态机和宿主业务入口。
+- [DEV-005 #3](https://github.com/linksucre/deepseek-workbench/pull/3)、[DEV-010 #2](https://github.com/linksucre/deepseek-workbench/pull/2)、[DEV-011 #1](https://github.com/linksucre/deepseek-workbench/pull/1) 为独立设计评审。DEV-011 远端分支已推送回送恢复证据 `4cc8e91`，以该提交的 PR 检查和审批为准。[DEV-002 #4](https://github.com/linksucre/deepseek-workbench/pull/4) 将 `fcbc680` 已有的 M0 检查改进独立提交，使用公开 Harness。本地依赖安装、两项门禁回归、差异检查和实际 Host 冒烟通过。审批前保持主分支的现有里程碑状态。
+- 联调分支已快进至 `1b3d2c4`。在保护版 Harness 和本地模拟模型上，27 项回归、仓库及差异检查、预设、存储、应用、原生交付与审阅回执、资料、用量、worktree 隔离和独立安装归档的 Chromium 流程均通过。核对 22 个 owner 路由及 2 个 Agent 工具的契约映射。分页 3000 条、60 页、50 次热读 p95 为 8.64 ms。以上为候选证据。固定的保护版提交 `5bff262ae7` 仍需可供 CI 检出的发布来源，TST-005 真实模型仍待授权。
+- `dev/DEV-003-task-domain` 与候选共用祖先 `c8f133b`，共享工单追踪留在此分支，纯领域实现可从 `fc1ecb5` 提取。候选保留联调和历史回溯。先合入独立 M0 门禁并完成设计审批，再审公共契约、领域层及各依赖实现。
