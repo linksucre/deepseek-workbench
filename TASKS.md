@@ -44,6 +44,7 @@
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-006` | Codex | `dev/DEV-006-start-timeout` | 基于 `dac36f6` 处理原生创建超时、迟到回执与 TST-003 冒烟 |
 | `DEV-006` | Codex | `dev/DEV-006-reconcile-replay` | 基于 `a2453a6` 修复既有启动核对操作的请求 ID 作用域，保留历史回执 |
+| `DEV-006` | Codex | `dev/DEV-006-forward-error-provenance` | 从 `c2487a0` 校验回送只识别同一根会话的结构化原生拒绝，范围为应用层、TST-010 用例及说明 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
@@ -254,3 +255,5 @@ DEV-011 入队前拒绝修复 `64df257` 已合入 `integration/workbench-receipt
 DEV-002 `163d291` 在候选 `c2591c5` 的隔离工作树独立复跑完整本地验收。27 项回归、仓库门禁、actionlint、预设、存储、应用、资料、用量、worktree、真实 Host 全链路及拒绝专项、双版本升级和备份回退、独立归档 Chromium 均通过。3000 条任务 60 页，两轮热读首页应用层 p95 分别为 9.12 ms 和 15.96 ms。空 Git 仓库向上游取固定 Harness 提交仍返回 `not our ref`，正式发布仍需可拉取的已批准基线、远端 CI、公共设计评审和 TST-005 真实试跑。
 
 DEV-008 的回送拒绝后重试修复 `86dfdef` 已合入联调代码 `c2591c5`，验收记录 `c2487a0`。独立安装 npm 归档后的 Chromium 全流程验证明确拒绝后直接重试使用新请求和当前 revision，后续受理成功但响应丢失时，重新加载后仍核对原请求。27 项回归、差异门禁、actionlint、预设、存储、应用、资料、用量和 worktree 检查通过。3000 条任务完整核对 60 页，本机应用层热读首页 p95 7.98 ms。正式验收仍等待公共设计评审、TST-005 试跑授权及 CI 可拉取基线。
+
+DEV-006 `b132967` 修复 DEV-011 回送错误证明。固定 Harness 的真实 Host 在入队后注入附同名 `session/not-found` 的普通异常，候选 `c2487a0` 将其误记为 `INVALID_TRANSITION`。修复后只有带原生标记、错误码匹配且指向本次根会话的结构化拒绝才结算失败。相同注入返回待核对，重启后从原生事件确认只入队一次。明确拒绝和原三项审阅专项、完整 Host、27 项回归、仓库门禁、actionlint 和独立安装包 Chromium 通过，使用本地模拟模型。提交可接入联调分支。
