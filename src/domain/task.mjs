@@ -179,8 +179,12 @@ export function evolveTask(detail, command, { expectedRevision, now }) {
       stateOf(task, 'ready', 'paused')
       task.status = 'blocked'
       break
+    case 'begin-review-forward':
     case 'reserve-review':
       stateOf(task, 'active')
+      break
+    case 'confirm-review-forward':
+      stateOf(task, 'active', 'review')
       break
     case 'finish-review': {
       stateOf(task, 'active', 'review')

@@ -20,6 +20,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
   const stage = z.strictObject({
     stageId: text, runId: text, afterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
     openedAt: text,
+    legacyForwardThrough: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
     choices: z.array(z.strictObject({
       revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
       choice: z.unknown(), observedAt: text,
@@ -30,12 +31,17 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
     status: z.enum(['reserved', 'completed', 'incomplete']), summary: z.string().max(8192), createdAt: text,
     requestId: text, actorId: text, throughSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable(),
   })
+  const reviewForward = z.strictObject({
+    actorId: text, requestId: text, reviewId: text, runId: text,
+    sessionId: text, nativeId: text, status: z.enum(['pending', 'accepted']),
+  })
   const schema = z.strictObject({
     schemaVersion: z.literal(1),
     detail,
     pendingIntent: intent.nullable(),
     stages: z.array(stage).default([]),
     reviews: z.array(review).default([]),
+    reviewForwards: z.array(reviewForward).default([]),
     operations: z.array(receipt).min(1),
   })
   const domain = await storageDomain.open(defineDomain({
@@ -73,6 +79,12 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
     }
     if (parsed.reviews.some(review => !parsed.detail.runs.some(run => run.id === review.runId))) {
       throw new TaskError('INVALID', 'Delegated review does not refer to a task run')
+    }
+    if (parsed.reviewForwards.some(forward =>
+      !parsed.reviews.some(review => review.reviewId === forward.reviewId && review.runId === forward.runId &&
+        review.status === 'completed') ||
+      !parsed.detail.runs.some(run => run.id === forward.runId && run.rootSessionId === forward.sessionId))) {
+      throw new TaskError('INVALID', 'Review forward does not match its review and root session')
     }
     for (const stage of parsed.stages) {
       if (!parsed.detail.runs.some(run => run.id === stage.runId) ||
@@ -156,7 +168,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
           if (prior.detail.task.revision !== input.expectedRevision) {
             throw new TaskError('REVISION_CONFLICT', 'Task revision changed')
           }
-          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages, reviews: prior.reviews }))
+          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages, reviews: prior.reviews, reviewForwards: prior.reviewForwards }))
           if (next.detail.task.revision !== input.expectedRevision + 1 ||
               next.detail.task.workspaceId !== prior.detail.task.workspaceId) {
             throw new TaskError('INVALID', 'A commit must advance one revision within the same workspace')
@@ -167,10 +179,33 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
             pendingIntent: structuredClone(next.pendingIntent),
             stages: structuredClone(next.stages ?? prior.stages),
             reviews: structuredClone(next.reviews ?? prior.reviews),
+            reviewForwards: structuredClone(next.reviewForwards ?? prior.reviewForwards),
             operations: [...prior.operations, { ...identity, result: structuredClone(next.detail) }],
           })
         })
         return structuredClone(stored.detail)
+      })
+    },
+
+    prepareReviewForwardCutoffs(capture) {
+      return serialize(async () => {
+        for (const key of table.keys()) {
+          const record = current(key)
+          const cutoffs = new Map()
+          for (const stage of record.stages) {
+            if (stage.legacyForwardThrough !== undefined) continue
+            const legacyPossible = record.reviews.some(review => review.runId === stage.runId && review.status === 'completed')
+            cutoffs.set(stage.runId, legacyPossible ? await capture(record, stage.runId) : -1)
+          }
+          if (cutoffs.size === 0) continue
+          // Startup metadata is prepared before registering command routes.
+          await table.update(key, raw => {
+            const latest = checked(key, raw)
+            return checked(key, { ...latest, stages: latest.stages.map(stage => cutoffs.has(stage.runId) &&
+              stage.legacyForwardThrough === undefined
+              ? { ...stage, legacyForwardThrough: cutoffs.get(stage.runId) } : stage) })
+          })
+        }
       })
     },
 

@@ -77,7 +77,8 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         reject('RECONCILIATION_REQUIRED', 'Startup intent changed or is no longer pending')
       }
       if (['pause', 'cancel', 'accept'].includes(command.kind) &&
-          current.reviews.some(review => review.status === 'reserved')) {
+          (current.reviews.some(review => review.status === 'reserved') ||
+           current.reviewForwards.some(forward => forward.status === 'pending'))) {
         reject('RECONCILIATION_REQUIRED', 'Resolve the pending review before ending the run')
       }
       let reviews = current.reviews
@@ -86,11 +87,17 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         reviews = reviews.map(review => review.reviewId === command.reviewId
           ? { ...review, status: command.status, summary: command.summary, throughSeq: command.throughSeq } : review)
       }
+      let reviewForwards = current.reviewForwards
+      if (command.kind === 'begin-review-forward') reviewForwards = [...reviewForwards, command.forward]
+      if (command.kind === 'confirm-review-forward') {
+        reviewForwards = reviewForwards.map(forward => forward.requestId === command.forward.requestId &&
+          forward.actorId === command.forward.actorId ? { ...forward, status: 'accepted' } : forward)
+      }
       const detail = evolveTask(current.detail, command, { expectedRevision: input.expectedRevision, now })
       let stages = current.stages
       if (command.kind === 'bind') {
         stages = [...stages, {
-          stageId: command.run.id, runId: command.run.id, afterSeq: command.afterSeq, openedAt: now,
+          stageId: command.run.id, runId: command.run.id, afterSeq: command.afterSeq, openedAt: now, legacyForwardThrough: -1,
           choices: detail.task.choice === null ? [] : [
             { revision: detail.task.revision, choice: detail.task.choice, observedAt: now },
           ],
@@ -103,11 +110,33 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         })
       }
       return {
-        detail, stages, reviews,
+        detail, stages, reviews, reviewForwards,
         pendingIntent: ['block-start', 'record-start-receipt'].includes(command.kind) ? command.intent
           : command.kind === 'bind' || command.kind === 'clear-block' ? null : current.pendingIntent,
       }
     })
+  }
+
+  function reservedReview(record, reviewId) {
+    const review = record.reviews.find(item => item.reviewId === reviewId)
+    if (!review) reject('NOT_FOUND', 'Review not found')
+    if (review.status !== 'reserved' || review.runId !== record.detail.task.activeRunId) {
+      reject('RECONCILIATION_REQUIRED', 'This review is no longer pending. Read the review list for its result.')
+    }
+    return review
+  }
+
+  function resolution(review, native) {
+    if (native.childSessionId !== review.childSessionId) {
+      reject('RECONCILIATION_REQUIRED', 'Review no longer matches the reserved child')
+    }
+    return {
+      kind: 'finish-review', reviewId: review.reviewId, runId: review.runId,
+      verifiedChild: native.verified ? review.childSessionId : null,
+      status: native.verified && native.outcome === 'completed' ? 'completed' : 'incomplete',
+      summary: native.verified ? native.summary : '',
+      throughSeq: native.verified ? native.throughSeq : null,
+    }
   }
 
   return {
@@ -224,9 +253,10 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       }, { payload: { input, verified } })
     },
 
-    reserveReview(principal, input) {
-      return mutate(principal, 'task.review.reserve', input, (record, now) => {
-        const runId = record.detail.task.activeRunId
+    reserveReview(principal, input, preflight) {
+      return mutate(principal, 'task.review.reserve', input, async (record, now) => {
+        const { status, activeRunId: runId } = record.detail.task
+        if (status !== 'active' || runId === null) reject('INVALID_TRANSITION', 'An active task is required')
         const current = record.reviews.filter(review => review.runId === runId)
         if (current.some(review => review.status === 'reserved') || current.length >= 2) {
           reject('REVISION_CONFLICT', 'This run has a pending review or reached its review limit')
@@ -236,6 +266,7 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         if (!instruction || !material || Buffer.byteLength(instruction) + Buffer.byteLength(material) > 24 * 1024) {
           reject('INVALID', 'Choose a review question and at most 24 KiB of material')
         }
+        await preflight(record, runId)
         return { kind: 'reserve-review', review: {
           reviewId: newId(), runId, childSessionId: `session-${newId()}`, instruction,
           status: 'reserved', summary: '', throughSeq: null, createdAt: now,
@@ -245,20 +276,40 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
     },
 
     finishReview(principal, input, native) {
-      return mutate(principal, 'task.review.finish', input, record => {
+      return mutate(principal, 'task.review.finish', input, record =>
+        resolution(reservedReview(record, input.reviewId), native), { payload: { input, native } })
+    },
+
+    reconcileReview(principal, input, observe) {
+      return mutate(principal, 'task.review.reconcile', input, async record => {
+        const review = reservedReview(record, input.reviewId)
+        return resolution(review, await observe(record, review))
+      })
+    },
+
+    beginReviewForward(principal, input, target) {
+      return mutate(principal, 'task.review.forward', input, record => {
         const review = record.reviews.find(item => item.reviewId === input.reviewId)
-        if (!review || review.status !== 'reserved' ||
-            review.runId !== record.detail.task.activeRunId || native.childSessionId !== review.childSessionId) {
-          reject('RECONCILIATION_REQUIRED', 'Review no longer matches the reserved child')
+        if (review?.status !== 'completed' || review.runId !== record.detail.task.activeRunId ||
+            review.runId !== target.runId || !review.summary.trim()) {
+          reject('INVALID_TRANSITION', 'Only a completed review for the current run can be forwarded')
         }
-        return {
-          kind: 'finish-review', reviewId: review.reviewId, runId: review.runId,
-          verifiedChild: native.verified ? review.childSessionId : null,
-          status: native.verified && native.outcome === 'completed' ? 'completed' : 'incomplete',
-          summary: native.verified ? native.summary : '',
-          throughSeq: native.verified ? native.throughSeq : null,
+        return { kind: 'begin-review-forward', forward: {
+          actorId: user(principal), requestId: input.requestId, reviewId: input.reviewId,
+          runId: target.runId, sessionId: target.sessionId, nativeId: target.nativeId, status: 'pending',
+        } }
+      })
+    },
+
+    confirmReviewForward(principal, input, forward) {
+      return mutate(principal, 'task.review.forward.confirm', input, record => {
+        if (!record.reviewForwards.some(item => item.actorId === user(principal) &&
+          item.requestId === forward.requestId && item.reviewId === forward.reviewId &&
+          item.nativeId === forward.nativeId && item.status === 'pending')) {
+          reject('RECONCILIATION_REQUIRED', 'Review forward no longer matches its native request')
         }
-      }, { payload: { input, native } })
+        return { kind: 'confirm-review-forward', forward }
+      }, { payload: forward })
     },
 
     finishLifecycle(principal, input, kind) {

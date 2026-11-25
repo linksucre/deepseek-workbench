@@ -18,10 +18,18 @@ export function installReviewerIsolation(ctx) {
   })
 }
 
+export function requireReviewParent(agents, sessionId) {
+  const parent = agents.get(sessionId)
+  if (!parent || parent.session.header.origin !== undefined || parent.session.header.agentPreset !== 'task-collaborator') {
+    throw new TaskError('INVALID_TRANSITION', 'Continue the original task conversation before starting a review')
+  }
+  return parent
+}
+
 /** Dispatch an owner-authorized reserved, one-shot, text-only review. */
 export function createBoundedReview({ agents, subagents, workspaceRegistry, sessionQuery }, { timeoutMs = 120_000 } = {}) {
   const running = new Set()
-  return async function runReview({ sessionId, workspaceId, childId, instruction, material, allows }) {
+  return async function runReview({ sessionId, workspaceId, childId, instruction, material, allows, expectedParent }) {
     if (!childId || childId === sessionId || typeof allows !== 'function' ||
         typeof instruction !== 'string' || !instruction.trim() ||
         typeof material !== 'string' || !material.trim() ||
@@ -37,9 +45,9 @@ export function createBoundedReview({ agents, subagents, workspaceRegistry, sess
       }, { workspaceId, sessionId }, signal)
       if (!observation) throw new TaskError('NOT_FOUND', 'The authorized root session is unavailable')
       try {
-        const parent = agents.get(sessionId)
-        if (!parent || parent.session.header.origin !== undefined || parent.session.header.agentPreset !== 'task-collaborator') {
-          throw new TaskError('INVALID_TRANSITION', 'Review requires a live task collaborator session')
+        const parent = requireReviewParent(agents, sessionId)
+        if (expectedParent !== undefined && parent !== expectedParent) {
+          throw new TaskError('RECONCILIATION_REQUIRED', 'Root session changed after reserving the review')
         }
         const activation = await subagents.startActivation({
           provider: 'spawn', childId, parent, cwd: observation.header.cwd,

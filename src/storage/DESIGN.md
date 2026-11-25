@@ -29,3 +29,5 @@ TST-007 的原生 JSON 夹具覆盖旧 V1 整域文件迁移到逐记录布局�
 工作台任务域设置 `strictRecordDocuments: true`。损坏、不可读或不兼容版本的物理文档会拒绝打开任务域并保留原文件。Host 不挂载工作台命令和页面，标准 Harness 会话仍可使用。物理文档可读取但不符合业务 schema 时，DomainFacility 以 `invalid-record` 拒绝打开。
 
 写入前再次检查当前文档。目标不存在时用排他发布保护同时出现的文件。有待修复的数据目录保留为取证与恢复源，按 [数据库手册](../../DATABASE.md) 从已验证的备份另建 profile。该保护依赖 [任务记录评审](../../docs/design/TASK-RECORD-PRESERVATION.md) 中的 Harness 变更。
+
+任务记录保留回送的操作者、公开 ID、审阅、Run、原生 ID 及状态。原始输入摘要使用已有操作回执。旧阶段在命令挂载前补记一次原生截止游标，启动期间的兼容元数据写入保留业务 revision。旧日志不可核验时将截止游标记为未知，供回送拒绝使用。

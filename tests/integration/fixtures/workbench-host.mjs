@@ -1,4 +1,4 @@
-import { access, writeFile } from 'node:fs/promises'
+import { access, readFile, unlink, writeFile } from 'node:fs/promises'
 import { setTimeout } from 'node:timers/promises'
 
 export const inject = ['workspaceRegistry', 'sessionController', 'sessionQuery']
@@ -14,6 +14,19 @@ async function exists(path) {
 }
 
 export async function apply(ctx) {
+  const forwardFault = process.env.WORKBENCH_TEST_FORWARD_RECEIPT_FAULT
+  if (forwardFault) {
+    const controller = ctx.sessionController
+    const prompt = controller.prompt.bind(controller)
+    controller.prompt = async (input, signal) => {
+      const result = await prompt(input, signal)
+      if (await exists(forwardFault) && await readFile(forwardFault, 'utf8') === input.requestId) {
+        await unlink(forwardFault)
+        throw new Error('Injected failure after native forward admission')
+      }
+      return result
+    }
+  }
   if (process.env.WORKBENCH_TEST_REVIEW_RECEIPT_FAULT === '1') {
     const query = ctx.sessionQuery
     const observe = query.observeSession.bind(query)

@@ -28,3 +28,5 @@
 ## 任务资料与阶段交接
 
 `task.context.index` 接收任务 ID，返回授权来源的元数据及最近阶段交接。`task.context.load` 还接收已授权、已登记的完整 `SourceRef`，返回文件文本、原始网页地址、原生会话文本或提交版本。两者均为本机 owner 只读命令，经过同源认证和任务范围检查。读取期间任务修订改变返回 `REVISION_CONFLICT`，未知或不可读来源返回 `NOT_FOUND`。工作台根据索引条目按需加载正文。 [资料设计](docs/design/M2-WORKBENCH-CONTEXT.md)
+
+审阅恢复使用已有的四个操作。对冷根的新派发返回 `INVALID_TRANSITION`，已受理的请求先用已有回执处理。显式核对与回送独立校验完整输入摘要，复用 ID 改变输入返回 `INVALID`。首次回送的预留和原生受理确认各推进一次 revision，返回结构继续为 `PromptReceipt`。原生结果未知时返回 `RECONCILIATION_REQUIRED`，使用同一输入核对。 [审阅设计](docs/design/M3-BOUNDED-REVIEW.md)

@@ -11,8 +11,9 @@ function messageText(content) {
   return content.filter(block => block.type === 'text').map(block => block.text).join('\n')
 }
 
-function promptReceipt(events, id) {
+export function promptReceipt(events, id, throughSeq = Infinity) {
   for (const event of events) {
+    if (event.seq > throughSeq) break
     const candidates = event.type === 'agent/inbox/spliced' ? event.data.inserted
       : event.type === 'user/message' ? [event.data] : []
     const message = candidates.find(item => item.source?.kind === 'user' && item.source.rpcId === id)
@@ -73,8 +74,15 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
     return detail.runs.find(item => item.id === detail.task.activeRunId)
   }
 
+  async function queueMessage({ sessionId, requestId, text }, timeout) {
+    const receipt = await sessionController.prompt({ sessionId, requestId, mode: 'queue',
+      content: [{ type: 'text', text }] }, timeout)
+    if (receipt.accepted !== true) throw new TaskError('HOST_UNAVAILABLE', 'Prompt was not admitted')
+    return { sessionId, accepted: true }
+  }
+
   return {
-    exclusive,
+    exclusive, withSession, queueMessage,
     async read(principal, input) {
       const detail = await app.get(principal, input.taskId)
       const sessionId = (currentRun(detail) ?? detail.runs.at(-1))?.rootSessionId
@@ -105,10 +113,7 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
           if (latest.task.status !== 'active' || currentRun(latest)?.rootSessionId !== sessionId) {
             throw new TaskError('INVALID_TRANSITION', 'Task requires an active conversation')
           }
-          const receipt = await sessionController.prompt({ sessionId, requestId, mode: 'queue',
-            content: [{ type: 'text', text }] }, timeout)
-          if (receipt.accepted !== true) throw new TaskError('HOST_UNAVAILABLE', 'Prompt was not admitted')
-          return { sessionId, accepted: true }
+          return queueMessage({ sessionId, requestId, text }, timeout)
         })
       })
     },
@@ -127,7 +132,8 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
         if (!allowed[action].includes(detail.task.status)) {
           throw new TaskError('INVALID_TRANSITION', 'Task state cannot change this way')
         }
-        if (action !== 'resume' && record.reviews.some(review => review.status === 'reserved')) {
+        if (action !== 'resume' && (record.reviews.some(review => review.status === 'reserved') ||
+            record.reviewForwards.some(forward => forward.status === 'pending'))) {
           throw new TaskError('RECONCILIATION_REQUIRED', 'Resolve the pending review before ending the run')
         }
         const sessionId = currentRun(detail)?.rootSessionId

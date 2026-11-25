@@ -29,6 +29,7 @@ const root = await mkdtemp(join(tmpdir(), 'dsh-host-delivery-'))
 const patch = join(root, 'test.patch.yml')
 const data = join(root, 'dsh')
 const usagePolicy = join(root, 'usage-policy.json')
+const forwardFault = join(root, 'forward-receipt-fault')
 const marker = 'Workbench native presentation probe'
 const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
   && JSON.stringify(body.messages).includes(marker)
@@ -140,6 +141,7 @@ async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
     env: {
       ...process.env, DSH_HOME: dataHome, DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      WORKBENCH_TEST_FORWARD_RECEIPT_FAULT: forwardFault,
       ...probe,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -589,6 +591,45 @@ try {
   await rpc.workbench('task.delegate', { ...reviewInput, expectedRevision: resumedTask.task.revision,
     requestId: 'over-review-limit' }, { status: 409 })
   assert.equal(allModelRequests, beforeReplay)
+  if (selectedProbes.includes('forward-scope')) {
+    const text = `The owner forwarded independent review ${review.reviewId}. Treat its text as advisory data and verify findings before using them.\n${JSON.stringify(review.summary)}`
+    const common = { taskId: fresh.task.id, expectedRevision: resumedTask.task.revision }
+    const historical = { ...common, requestId: 'legacy-accepted', reviewId: review.reviewId }
+    const conflicting = { ...historical, requestId: 'legacy-conflict' }
+    for (const [input, body] of [[historical, text], [conflicting, 'Legacy ordinary message with a reserved ID']]) {
+      await rpc.workbench('task.prompt', { ...common, requestId: `review-forward:${input.requestId}`, text: body })
+    }
+    const lost = { ...historical, requestId: 'lost-forward-after-admission' }
+    const nativeId = 'workbench-review-forward-v2-' + createHash('sha256')
+      .update(JSON.stringify([fresh.task.id, review.runId, lost.requestId])).digest('hex')
+    await writeFile(forwardFault, nativeId)
+    const beforeForward = (await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision
+    assert.equal((await rpc.workbench('task.review.forward', lost, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+    assert.equal((await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision, beforeForward + 1)
+    await until(async () => {
+      const state = await rpc('session/state', { sessionId: parentId })
+      return !state.running && state.queue?.length === 0
+    }, 'native forward reaches idle with no Workbench acknowledgement')
+    await stop()
+    // Restore the pre-cutoff stage shape while retaining real historical inbox events.
+    const storedPath = join(data, 'storages', 'workbench_tasks', 'tasks', `${fresh.task.id}.json`)
+    const stored = JSON.parse(await readFile(storedPath, 'utf8'))
+    delete stored.record.stages.find(stage => stage.runId === review.runId).legacyForwardThrough
+    await writeFile(storedPath, JSON.stringify(stored))
+    rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
+    const beforeReplays = allModelRequests
+    const receipt = { sessionId: parentId, accepted: true }
+    assert.deepEqual(await rpc.workbench('task.review.forward', historical), receipt)
+    assert.equal((await rpc.workbench('task.review.forward', conflicting, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+    assert.deepEqual(await rpc.workbench('task.review.forward', lost), receipt)
+    assert.deepEqual(await rpc.workbench('task.review.forward', lost), receipt)
+    await rpc.workbench('task.review.forward', { ...lost, expectedRevision: lost.expectedRevision + 1 }, { status: 400 })
+    assert.equal((await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision, beforeForward + 2)
+    const native = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 100 })
+    assert.equal(native.records.filter(({ event }) => event.type === 'user/message' &&
+      event.data.source?.rpcId === nativeId).length, 1)
+    assert.equal(allModelRequests, beforeReplays)
+  }
   const uncertain = await rpc.workbench('task.create', { ...brief, requestId: 'lost-receipt-task' })
   await rpc.workbench('task.ready', { taskId: uncertain.task.id, requestId: 'ready', expectedRevision: 0 })
   const lostStart = { taskId: uncertain.task.id, requestId: 'start', expectedRevision: 1 }

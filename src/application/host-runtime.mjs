@@ -93,6 +93,7 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     app, repository, conversation, workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,
     agents: ctx.agents, subagents: ctx.subagents,
   })
+  await delegation.prepareLegacyForwards(owner)
   const policy = createUsagePolicy(usagePolicy)
   const usage = createHostTaskUsage({
     workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,

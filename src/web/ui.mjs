@@ -448,6 +448,28 @@ function reviewPanel(task) {
     feedback(success)
     if (selected?.task.id === task.id) await loadTask(task.id)
   })
+  const forwardKey = reviewId => `workbench:review-forward:${task.id}:${reviewId}`
+  const pendingForward = reviewId => sessionStorage.getItem(forwardKey(reviewId))
+
+  function forwardReview(reviewId) {
+    return perform(async () => {
+      const key = forwardKey(reviewId)
+      const input = JSON.parse(pendingForward(reviewId) ?? 'null') ?? {
+        taskId: task.id, reviewId, expectedRevision: task.revision, requestId: crypto.randomUUID(),
+      }
+      sessionStorage.setItem(key, JSON.stringify(input))
+      try {
+        await command('task.review.forward', input)
+      } catch (error) {
+        if (['INVALID', 'REVISION_CONFLICT', 'INVALID_TRANSITION'].includes(error.code)) sessionStorage.removeItem(key)
+        throw error
+      }
+      sessionStorage.removeItem(key)
+      feedback('已发给主 Agent')
+      if (selected?.task.id === task.id) await loadTask(task.id)
+    })
+  }
+
   async function refresh() {
     try {
       const { items } = await command('task.reviews', { taskId: task.id })
@@ -458,9 +480,11 @@ function reviewPanel(task) {
         if (review.summary) row.append(node('p', review.summary))
         if (review.status === 'reserved') row.append(button('核对审阅', () =>
           change('task.review.reconcile', { reviewId: review.reviewId }, '已核对审阅')))
-        if (review.status === 'completed' && review.summary && task.status === 'active' && task.activeRunId === review.runId) {
-          row.append(button('把审阅发给主 Agent', () =>
-            change('task.review.forward', { reviewId: review.reviewId }, '已发给主 Agent')))
+        const awaitingForward = pendingForward(review.reviewId)
+        if (review.status === 'completed' && review.summary &&
+            (awaitingForward || (task.status === 'active' && task.activeRunId === review.runId))) {
+          row.append(button(awaitingForward ? '核对回送' : '把审阅发给主 Agent',
+            () => forwardReview(review.reviewId)))
         }
         return row
       })
