@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import Ajv2020 from 'ajv/dist/2020.js'
 import { z } from 'zod'
 import { mountWorkbenchHost } from './host-runtime.mjs'
@@ -10,6 +11,12 @@ export async function apply(ctx, config) {
   const dependency = new URL(config.storageModule)
   if (dependency.protocol !== 'file:') throw new Error('Workbench requires a local Harness storage module')
   const { defineDomain, domainTable } = await import(dependency.href)
-  await mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable })
+  let usagePolicy
+  if (config.usagePolicyFile !== undefined) {
+    const policyFile = new URL(config.usagePolicyFile)
+    if (policyFile.protocol !== 'file:') throw new Error('Workbench usage policy must be a local file')
+    usagePolicy = JSON.parse(await readFile(policyFile, 'utf8'))
+  }
+  await mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, usagePolicy })
   await mountWorkbenchPage(ctx)
 }

@@ -696,6 +696,32 @@
               "type": "null"
             }
           ]
+        },
+        "softBudget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "decimalAmount": {
+              "type": "string",
+              "pattern": "^\\d+(\\.\\d+)?$"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$"
+            },
+            "comparison": {
+              "enum": [
+                "unknown",
+                "within",
+                "reached"
+              ]
+            }
+          },
+          "required": [
+            "decimalAmount",
+            "currency",
+            "comparison"
+          ]
         }
       },
       "required": [

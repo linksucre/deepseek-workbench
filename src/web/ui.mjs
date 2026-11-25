@@ -216,6 +216,7 @@ function renderDetail() {
     detail.append(conversationPanel(task, metadata))
   }
   if (task.status === 'blocked') detail.append(recoveryEditor())
+  detail.append(usagePanel(task.id))
   for (const submission of [...submissions].reverse()) {
     const current = submission.id === task.currentSubmissionId
     const area = section(current ? '当前提交' : '历史提交')
@@ -231,6 +232,63 @@ function renderDetail() {
     if (current && task.status === 'review') area.append(reviewEditor(submission))
     detail.append(area)
   }
+}
+
+const countFormat = new Intl.NumberFormat('zh-CN')
+const coverageLabels = { complete: '用量完整', partial: '部分用量缺报', unknown: '用量未知' }
+
+function usagePanel(taskId) {
+  const pane = node('details')
+  const summary = node('summary', 'Token 与费用')
+  const content = node('div', undefined, 'usage-content')
+  content.setAttribute('aria-live', 'polite')
+  pane.append(summary, content)
+  let sequence = 0
+  async function load() {
+    const current = ++sequence
+    content.replaceChildren(node('p', '正在读取用量…', 'subtle'))
+    try {
+      const value = await command('task.usage', { taskId })
+      if (current !== sequence || !pane.isConnected) return
+      const cost = value.estimatedCost
+      content.replaceChildren(node('strong', coverageLabels[value.completeness]), node('p', cost
+        ? `估算费用：${cost.currency} ${cost.decimalAmount}（费率日期 ${cost.rateDate}）`
+        : '暂无可核验费用估算。计数缺报或未配置匹配费率时，金额保留为空。'))
+      if (value.softBudget) {
+        const { currency, decimalAmount, comparison } = value.softBudget
+        const message = { reached: '已达到提醒金额', within: '低于提醒金额', unknown: '尚无法比较' }
+        content.append(node('p', `预算提醒：${currency} ${decimalAmount} · ${message[comparison]}`,
+          comparison === 'reached' ? 'budget-warning' : 'subtle'))
+      }
+      if (value.coverageNotes.length) content.append(list(value.coverageNotes.map(coverageNote)))
+      for (const bucket of value.buckets) {
+        const model = node('article', undefined, 'usage-model')
+        model.append(node('h3', `${bucket.model} · ${bucket.provider}`))
+        const fields = node('dl', undefined, 'usage-fields')
+        for (const [key, label] of Object.entries({
+          uncachedInput: '未缓存输入', cacheRead: '缓存读取', cacheWrite: '缓存写入', output: '输出',
+        })) {
+          const cell = node('div')
+          cell.append(node('dt', label), node('dd', bucket[key] === null ? '未报告' : countFormat.format(bucket[key])))
+          fields.append(cell)
+        }
+        model.append(fields)
+        content.append(model)
+      }
+      content.append(button('刷新用量', load))
+    } catch (error) {
+      if (current === sequence && pane.isConnected) content.replaceChildren(node('p', error.message), button('重试', load))
+    }
+  }
+  pane.addEventListener('toggle', () => { if (pane.open && !content.hasChildNodes()) void load() })
+  return section('用量', pane)
+}
+
+function coverageNote(note) {
+  if (/^\d+ bound or expected session/.test(note)) return `${note.split(' ')[0]} 个关联会话的用量无法核验。`
+  if (/^\d+ attempt.*missing or ambiguous/.test(note)) return `${note.split(' ')[0]} 次模型尝试缺少可核验计数，仅汇总可得字段。`
+  if (/^\d+ attempt.*no verified provider/.test(note)) return `${note.split(' ')[0]} 次模型尝试无法确认提供方和模型。`
+  return note
 }
 
 function conversationPanel(task, metadata) {

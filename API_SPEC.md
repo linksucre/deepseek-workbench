@@ -16,3 +16,5 @@
 提交的选择为 `latest-presentation` 或 `files`。后者必须提供 paths，前者不得提供 paths。输入不携带内部产物或证据 ID。Host 从当前阶段且晚于上一提交的成功展示解析版本引用。验收接受可由 owner 提供 confirmedCriteria，逐项确认本次提交的条件，活动不写入原提交证据，而作为决定的 reviewEvidence 持久化。退回必须提供理由，不接受条件确认。
 
 `task.conversation` 返回已授权根会话最近的用户和 Agent 文本、执行状态和待交互类别。它不启动 Agent。`task.prompt` 由 Host 选择当前任务绑定的根会话，以任务、Run 和请求 ID 派生原生请求 ID，保留 native queue 语义。重启后原文重放返回既有回执，同 ID 改正文拒绝。新消息要求任务 active 并校验 revision。暂停和取消在原生停止得到确认后变更任务；恢复重验原会话并由后续显式消息唤醒。
+
+`task.usage` 使用已授权任务的原生结算记录。返回提供方与模型分组、输入输出及缓存计数、完整性和覆盖说明。缺少计数时字段为 null；缺少费率、完整计数或统一币种时 estimatedCost 为空。配置软预算后附 softBudget，仅当估算币种一致且金额可比较时判断是否达到提醒。

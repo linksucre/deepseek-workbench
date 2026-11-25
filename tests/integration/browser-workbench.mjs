@@ -15,6 +15,7 @@ const { chromium } = requireHost('playwright')
 const home = await mkdtemp(join(tmpdir(), 'workbench-browser-'))
 const workspace = join(home, 'workspace')
 const overlay = join(home, 'workbench.yml')
+const usagePolicy = join(home, 'usage-policy.json')
 const attempts = new Map()
 
 const provider = createServer(async (request, response) => {
@@ -33,7 +34,7 @@ const provider = createServer(async (request, response) => {
     const args = tool === 'present' ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
-      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 8, output_tokens: 0 } },
+      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 8, output_tokens: 0, ...(flow === 'browser code task' && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (tool) {
       events.push(
@@ -97,9 +98,14 @@ try {
   await mkdir(workspace)
   await writeFile(join(workspace, 'code.md'), 'Code change and checks')
   await writeFile(join(workspace, 'materials.md'), 'Initial version')
+  await writeFile(usagePolicy, JSON.stringify({
+    rates: [{ provider: 'deepseek-official', model: 'deepseek-flash', currency: 'CNY', rateDate: '2020-01-01',
+      perMillion: { uncachedInput: '1', cacheRead: '0.2', cacheWrite: '1', output: '2' } }],
+    softBudget: { currency: 'CNY', decimalAmount: '0.000001' },
+  }))
   execFileSync(process.execPath, [
     process.env.WORKBENCH_OVERLAY_GENERATOR ??
-      fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay,
+      fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay, usagePolicy,
   ])
   browser = await chromium.launch({
     ...(process.env.WORKBENCH_CHROME_PATH ? { executablePath: process.env.WORKBENCH_CHROME_PATH } : {}),
@@ -151,6 +157,10 @@ try {
   await accept()
   await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
 
+  await page.getByText('Token 与费用', { exact: true }).click()
+  await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
+  await page.getByText(/估算费用：CNY 0\./).waitFor()
+
   await create('browser material task', 'documents')
   await waitReview()
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
@@ -168,6 +178,9 @@ try {
   await waitReview()
   await accept()
   await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
+  await page.getByText('Token 与费用', { exact: true }).click()
+  await page.getByText('部分用量缺报', { exact: true }).waitFor()
+  await page.getByText(/预算提醒.*尚无法比较/).waitFor()
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])

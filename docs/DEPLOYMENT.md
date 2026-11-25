@@ -33,3 +33,22 @@ npm pack --pack-destination /path/to/artifacts
 npm install --prefix /path/to/local-install /path/to/artifacts/deepseek-workbench-0.1.0.tgz
 node /path/to/local-install/node_modules/deepseek-workbench/scripts/source-overlay.mjs   /path/to/built/deepseek-harness /path/to/new-workbench-overlay.yml
 ```
+
+## 配置用量估算及预算提醒
+
+可把本地 JSON 路径作为生成 overlay 的第三个参数。省略时仍可看计数和覆盖，估算金额为空。以下数字仅演示字段格式，部署时填写实际适用费率。费率单位为每百万 token，按提供方、模型和 UTC 生效日期匹配。
+
+```json
+{
+  "rates": [{
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "currency": "CNY",
+    "rateDate": "2025-01-01",
+    "perMillion": { "uncachedInput": "1", "cacheRead": "0.2", "cacheWrite": "1", "output": "2" }
+  }],
+  "softBudget": { "currency": "CNY", "decimalAmount": "3.00" }
+}
+```
+
+修改本地费率后重启整个工作台 profile。软预算适用于该 profile 的每个任务，只提醒，不停止模型。配置中无需填写凭据。
