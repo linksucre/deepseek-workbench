@@ -442,11 +442,14 @@ try {
   assert.deepEqual(reviewParent.runs[0].childSessionIds, [])
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
   const beforeDenied = allModelRequests
+  const instruction = 'Check the selected brief'
+  const materialPrefix = 'review isolation probe\n请核对“材料”\n'
+  const material = materialPrefix + 'x'.repeat(24 * 1024 - Buffer.byteLength(instruction + materialPrefix))
   const reviewInput = { taskId: fresh.task.id, expectedRevision: reviewParent.task.revision, requestId: 'review',
-    instruction: 'Check the selected brief', material: 'review isolation probe' }
+    instruction, material }
   await rpc.workbench('task.delegate', reviewInput, { anonymous: true, status: 401 })
   await rpc.workbench('task.delegate', { ...reviewInput, taskId: randomUUID() }, { status: 404 })
-  await rpc.workbench('task.delegate', { ...reviewInput, material: '材'.repeat(9000) }, { status: 400 })
+  await rpc.workbench('task.delegate', { ...reviewInput, material: material + 'x' }, { status: 400 })
   await rpc.workbench('task.delegate', { ...reviewInput, childSessionId: parentId }, { status: 400 })
   assert.equal(allModelRequests, beforeDenied)
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
@@ -457,7 +460,11 @@ try {
   try {
     await until(() => reviewRequest, 'restricted reviewer model request')
     assert.deepEqual(reviewRequest.tools ?? [], [])
+    assert.equal(reviewRequest.max_tokens, 1024)
     assert.match(JSON.stringify(reviewRequest.system), /independent reviewer/i)
+    const sentText = reviewRequest.messages.filter(message => message.role === 'user')
+      .flatMap(message => message.content).map(block => block.text)
+    assert.ok(sentText.includes(JSON.stringify({ instruction, material })), 'reviewer received the complete selected material')
     assert.doesNotMatch(JSON.stringify(reviewRequest.messages), /parent-only history marker/)
     const pendingReviews = await rpc.workbench('task.reviews', { taskId: fresh.task.id })
     reserved = pendingReviews.items[0]
