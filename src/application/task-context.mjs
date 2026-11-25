@@ -67,7 +67,7 @@ export function createTaskContext({ loadTask, canReadSource, readSource, clock =
     async get(principal, taskId) {
       const record = await recordFor(principal, taskId)
       const { id, workspaceId, revision } = record.detail.task
-      const context = { principal, taskId, workspaceId }
+      const context = { principal, taskId, workspaceId, detail: record.detail }
       const now = clock()
       const sources = []
       for (const { source, origins } of collectSources(record.detail).values()) {
@@ -84,7 +84,8 @@ export function createTaskContext({ loadTask, canReadSource, readSource, clock =
       const { id, workspaceId, revision } = record.detail.task
       const entry = selected && collectSources(record.detail).get(sourceKey(selected))
       if (!entry) throw missing()
-      const request = Object.freeze({ principal, taskId, workspaceId, source: Object.freeze({ ...entry.source }) })
+      const request = Object.freeze({ principal, taskId, workspaceId, detail: record.detail,
+        source: Object.freeze({ ...entry.source }) })
       if (await canReadSource(request) !== true) throw missing()
       const content = await readSource(request)
       if (await canReadSource(request) !== true) throw missing()
