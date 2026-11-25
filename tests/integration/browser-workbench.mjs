@@ -22,11 +22,14 @@ const checkedRevision = 'browser checked revision'
 const suggestionPrompt = 'browser execution suggestion'
 const suggestionReason = '先核对输入再决定怎么修改'
 const overrideReason = '沿用已验证的开发流程'
+const recoveryTitle = 'browser recover root session'
 const attempts = new Map()
 let independentReviewRequests = 0
+let modelRequests = 0
 let suggested = false
 
 const provider = createServer(async (request, response) => {
+  modelRequests += 1
   try {
     const parts = []
     for await (const part of request) parts.push(part)
@@ -87,14 +90,20 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 function safeOutput() {
   return log.replace(/dsh web: .+/g, 'dsh web: [private URL]')
 }
-async function start() {
+async function start({ failAttach = false } = {}) {
   log = ''
+  const env = { ...process.env, DSH_HOME: join(home, 'dsh'), DSH_AGENTS_HOME: join(home, 'agents'),
+    DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}` }
+  delete env.WORKBENCH_TEST_FAIL_ATTACH
+  delete env.WORKBENCH_TEST_HOLD_NATIVE_CREATE
+  delete env.WORKBENCH_TEST_LATE_NATIVE_CREATE
+  delete env.WORKBENCH_TEST_REVIEW_RECEIPT_FAULT
+  if (failAttach) env.WORKBENCH_TEST_FAIL_ATTACH = '1'
   child = spawn(process.execPath, [
     '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', overlay,
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
-    cwd: upstream, env: { ...process.env, DSH_HOME: join(home, 'dsh'), DSH_AGENTS_HOME: join(home, 'agents'),
-      DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}` },
+    cwd: upstream, env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   closed = once(child, 'close')
@@ -134,6 +143,8 @@ try {
     process.env.WORKBENCH_OVERLAY_GENERATOR ??
       fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay, usagePolicy, '--evidence-policy', evidencePolicy,
   ])
+  const recoveryFixture = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
+  await writeFile(overlay, `\n- insert:\n    - id: workbench-test-host\n      name: ${JSON.stringify(recoveryFixture)}\n`, { flag: 'a' })
   browser = await chromium.launch({
     ...(process.env.WORKBENCH_CHROME_PATH ? { executablePath: process.env.WORKBENCH_CHROME_PATH } : {}),
   })
@@ -154,7 +165,12 @@ try {
   }
   const button = name => page.getByRole('button', { name, exact: true })
   const currentChoice = page.getByRole('region', { name: '当前执行方式' })
-  await openWorkbench(await start())
+  const conversation = page.getByRole('region', { name: '执行会话' })
+  const readyButton = button('启动 Agent 会话')
+  const attachButton = button('核对并挂载')
+  const sessionIdField = page.getByLabel('要核对的会话 ID')
+  const taskButton = title => page.getByRole('navigation', { name: '任务列表' }).getByRole('button', { name: title, exact: false })
+  await openWorkbench(await start({ failAttach: true }))
   async function tabTo(target) {
     await target.waitFor()
     for (let step = 0; step < 50; step++) {
@@ -185,6 +201,14 @@ try {
   const goalStart = '材料检索与核验\n<review>'
   const goalEnd = '</review>'
   const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
+  const templateDefaults = {
+    development: { deliverables: '修改后的代码\n验证结果', criteria: '实现预期行为\n运行相关测试' },
+    design: { deliverables: '可预览设计\n关键状态说明', criteria: '覆盖主要使用场景\n检查响应式与关键状态' },
+    writing: { deliverables: '可编辑正文', criteria: '符合目标受众与语气\n核查关键事实' },
+    documents: { deliverables: '可编辑材料\n来源清单', criteria: '核对关键事实和数据\n标注来源及缺失信息' },
+  }
+  const deliverableField = page.getByLabel(/交付物.*每行一项/)
+  const criterionField = page.getByLabel(/验收条件.*每行一项/)
   async function choose(domain, labels, reason, skill = '') {
     const taskType = page.getByLabel('任务类型')
     await taskType.waitFor()
@@ -205,14 +229,17 @@ try {
     await currentChoice.getByText(reason, { exact: true }).waitFor()
     await page.locator('body:not([aria-busy])').waitFor()
   }
-  async function create(title, template, { goal = '交付并核查该工作', criteria, materials, afterStart } = {}) {
+  async function createDraft(title, template, { goal, criteria, deliverables, materials } = {}) {
     await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
+    assert.equal(await deliverableField.inputValue(), templateDefaults[template].deliverables)
+    assert.equal(await criterionField.inputValue(), templateDefaults[template].criteria)
     await tabTo(page.getByLabel('标题'))
     await page.keyboard.insertText(title)
     await tabTo(page.getByLabel('目标'))
-    await page.keyboard.insertText(goal)
-    if (criteria) await page.getByLabel(/验收条件/).fill(criteria)
+    await page.keyboard.insertText(goal ?? '交付并核查该工作')
+    if (criteria) await criterionField.fill(criteria)
+    if (deliverables) await deliverableField.fill(deliverables)
     if (materials) await page.getByLabel(/资料来源/).fill(materials)
     const onSave = operation => page.waitForResponse(response =>
       response.url().endsWith('/workbench/v1/command') && response.request().method() === 'POST' &&
@@ -220,6 +247,7 @@ try {
     const created = materials ? onSave('task.create') : null
     await activate(button('保存任务'))
     await page.getByRole('heading', { name: title }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
     if (created) {
       const original = (await (await created).json()).result.task.materials
       await activate(button('编辑任务'))
@@ -227,10 +255,18 @@ try {
       const edited = onSave('task.updateBrief')
       await activate(button('保存任务'))
       assert.deepEqual((await (await edited).json()).result.task.materials, original)
+      await page.locator('body:not([aria-busy])').waitFor()
     }
+  }
+  async function createReady(title, template, fields) {
+    await createDraft(title, template, fields)
     await activate(button('标为就绪'))
-    await activate(button('启动 Agent 会话'))
-    const conversation = page.getByRole('region', { name: '执行会话' })
+    await readyButton.waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+  }
+  async function create(title, template, { goal = '交付并核查该工作', criteria, materials, afterStart } = {}) {
+    await createReady(title, template, { goal, criteria, materials })
+    await activate(readyButton)
     await conversation.waitFor()
     if (afterStart) await afterStart()
     await activate(page.getByRole('link', { name: '查看执行会话' }))
@@ -264,6 +300,53 @@ try {
     }
     await activate(button('接受提交'))
   }
+  async function nativeSessionIds() {
+    const response = await page.request.post(new URL('/api/session/list', page.url()).href, { data: {
+      type: 'client-request', rpcId: randomUUID(), method: 'session/list', payload: { args: { _request: {} } },
+    } })
+    assert.equal(response.status(), 200)
+    const { result } = await response.json()
+    assert.equal(result.ok, true, JSON.stringify(result.error))
+    return result.value.items.map(item => item.sessionId)
+  }
+
+  const designTitle = 'browser design template'
+  const writingTitle = 'browser writing template'
+  await createDraft(designTitle, 'design', { deliverables: '线框稿\n交互说明' })
+  await createDraft(writingTitle, 'writing', { criteria: '对照编辑规范\n核查引用来源' })
+  await createReady(recoveryTitle, 'development')
+  await activate(readyButton)
+  await page.getByRole('heading', { name: '会话待核对' }).waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  const orphaned = await nativeSessionIds()
+  assert.equal(orphaned.length, 1)
+  assert.equal(await conversation.isVisible(), false)
+  await stop()
+  await openWorkbench(await start())
+  for (const [title, deliverables, criteria] of [
+    [designTitle, '线框稿\n交互说明', templateDefaults.design.criteria],
+    [writingTitle, templateDefaults.writing.deliverables, '对照编辑规范\n核查引用来源'],
+  ]) {
+    await activate(taskButton(title))
+    await page.getByRole('heading', { name: title }).waitFor()
+    await activate(button('编辑任务'))
+    assert.equal(await page.getByLabel('模板').isVisible(), false)
+    assert.equal(await deliverableField.inputValue(), deliverables)
+    assert.equal(await criterionField.inputValue(), criteria)
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  }
+  await activate(taskButton(recoveryTitle))
+  await sessionIdField.fill(randomUUID())
+  await activate(attachButton)
+  await page.getByRole('status').filter({ hasText: 'Native startup requires verification' }).waitFor()
+  assert.equal(await conversation.isVisible(), false)
+  await sessionIdField.fill(orphaned[0])
+  await activate(attachButton)
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  assert.deepEqual(await nativeSessionIds(), orphaned)
+  assert.equal(modelRequests, 0)
+
   await create('browser code task', 'development', {
     afterStart: async () => {
       await page.getByLabel('发给 Agent').fill(suggestionPrompt)
@@ -422,7 +505,7 @@ try {
   assert.deepEqual((await decisionRequest).postDataJSON().input.confirmedCriteria, ['criterion-2'])
   await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
   await stop()
-  await openWorkbench(await start())
+  await openWorkbench(await start({ failAttach: true }))
   await page.getByRole('button', { name: /browser checked artifact/ }).click()
   await currentEvidence.locator('summary').click()
   await page.locator('.submission-evidence').last().locator('summary').click()
@@ -430,10 +513,34 @@ try {
   await currentEvidence.getByText('用户确认 · 通过', { exact: true }).waitFor()
   await page.locator('.submission-evidence').last().getByText('机器检查 · 失败', { exact: true }).waitFor()
 
+  const beforeDiscard = await nativeSessionIds()
+  const beforeDiscardRequests = modelRequests
+  await createReady('browser discard start intent', 'writing')
+  await activate(readyButton)
+  await sessionIdField.waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  const withOrphan = await nativeSessionIds()
+  assert.equal(withOrphan.length, beforeDiscard.length + 1)
+  assert.ok(beforeDiscard.every(id => withOrphan.includes(id)))
+  await activate(button('结束启动意图'))
+  await readyButton.waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  assert.equal(await sessionIdField.isVisible(), false)
+  assert.equal(await conversation.isVisible(), false)
+  assert.deepEqual((await nativeSessionIds()).sort(), withOrphan.sort())
+  await activate(readyButton)
+  await conversation.waitFor()
+  const afterRestart = await nativeSessionIds()
+  const replacements = afterRestart.filter(id => !withOrphan.includes(id))
+  assert.equal(replacements.length, 1)
+  assert.equal(afterRestart.length, withOrphan.length + 1)
+  await conversation.getByText(replacements[0], { exact: true }).waitFor()
+  assert.equal(modelRequests, beforeDiscardRequests)
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium task templates, root-session recovery and discard, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
