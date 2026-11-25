@@ -15,6 +15,8 @@
 | TST-011 | 上下文索引 | [上下文冒烟](tests/integration/context-smoke.mjs) 验证来源、日期、过期提示、UTF-8 BOM 和换行原样返回及重启，覆盖读取中移除工作区、解除会话绑定与释放观测租约；[Host](tests/integration/host-delivery-smoke.mjs) 验证同源认证、任务范围、归档用户与助手消息、原生提交版本及不调用模型；[浏览器](tests/integration/browser-workbench.mjs) 验证录入、保留原文件名及日期、网址校验、按需读取、纯文本预览，以及退回改选后的交接方式名称和资料预览 |
 | TST-012 | M1 首条集成验收 | [评审场景](docs/design/M1-RECOVERY-AND-SUBMISSION.md)，使用真实 Host 和模拟模型，覆盖预留 ID、重启、挂载、用户覆盖、提交选择、漂移、退回与再次接受。[浏览器](tests/integration/browser-workbench.mjs) 验证故障后拒绝错误会话 ID、重启复挂原会话及结束意图后显式启动 |
 
+TST-010 的 `--review-recovery-regressions=forward-no-admission-proof` 另从留有未决回送的备份重启。新客户端用最新 revision 和新请求 ID 回送同一审阅应收到 `REVISION_CONFLICT`。核对任务记录字节、revision、原生消息和本地模拟模型调用数均无变化，原请求仍可按原输入核对。待原请求结算后，使用当前 revision 再次尝试新请求，验证只增加一条原生消息且原样重放保持 revision 不变。
+
 本地 M0 门禁先运行 `npm ci`，再运行 `npm run check` 和 `npm run test:smoke -- /path/to/built/deepseek-harness`。CI 从固定提交构建上游，运行相同集成脚本。真实模型试跑属于 M1 验收，单独保存脱敏证据。失败应记范围、复现、预期及实际，避免把跳过写成通过。
 
 [Harness integration](.github/workflows/ci.yml) 在 macOS 上运行上下文冒烟、原生 worktree 写入隔离试验和分页基准。worktree 试验使用临时 Git 仓库，验证两条分支的写入隔离和冲突后的结果保留。分页输出包括机器、Node 版本、样本数及 p95。浏览器使用独立安装的本地归档。

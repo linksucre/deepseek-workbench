@@ -16,12 +16,14 @@ async function exists(path) {
 export async function apply(ctx) {
   const forwardFault = process.env.WORKBENCH_TEST_FORWARD_RECEIPT_FAULT
   const forwardRefusal = process.env.WORKBENCH_TEST_FORWARD_REFUSAL
+  const forwardOutcomeUnknown = process.env.WORKBENCH_TEST_FORWARD_OUTCOME_UNKNOWN === '1'
   if (forwardRefusal) {
     const controller = ctx.sessionController
     const prompt = controller.prompt.bind(controller)
     controller.prompt = async (input, signal) => {
       if (await exists(forwardRefusal) && await readFile(forwardRefusal, 'utf8') === input.requestId) {
         await unlink(forwardRefusal)
+        if (forwardOutcomeUnknown) throw new Error('Injected forward interruption without an admission result')
         throw Object.assign(new Error('Injected native refusal before prompt admission'), {
           isDSHRemoteError: true,
           code: 'session/not-found',
@@ -63,6 +65,29 @@ export async function apply(ctx) {
         }
       }
       return observation
+    }
+  }
+  const observationFault = process.env.WORKBENCH_TEST_FORWARD_OBSERVATION_FAULT
+  if (observationFault) {
+    const query = ctx.sessionQuery
+    const observe = query.observeSession.bind(query)
+    query.observeSession = async (sessionId, options) => {
+      if (await exists(observationFault)) {
+        const fault = JSON.parse(await readFile(observationFault, 'utf8'))
+        if (fault.sessionId === sessionId) {
+          await unlink(observationFault)
+          if (fault.kind === 'unreadable') throw new Error('Injected failure to read the original session history')
+          const observation = await observe(sessionId, options)
+          try {
+            await ctx.workspaceRegistry.get(fault.workspaceId).detachSession(sessionId)
+          } catch (error) {
+            observation[Symbol.dispose]()
+            throw error
+          }
+          return observation
+        }
+      }
+      return observe(sessionId, options)
     }
   }
   if (process.env.WORKBENCH_TEST_FAIL_ATTACH !== undefined) {

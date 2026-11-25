@@ -294,6 +294,10 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
             review.runId !== target.runId || !review.summary.trim()) {
           reject('INVALID_TRANSITION', 'Only a completed review for the current run can be forwarded')
         }
+        if (record.reviewForwards.some(forward => forward.reviewId === review.reviewId &&
+          forward.runId === review.runId && forward.status === 'pending')) {
+          reject('REVISION_CONFLICT', 'This review already has a forward awaiting confirmation')
+        }
         return { kind: 'begin-review-forward', forward: {
           actorId: user(principal), requestId: input.requestId, reviewId: input.reviewId,
           runId: target.runId, sessionId: target.sessionId, nativeId: target.nativeId, status: 'pending',
