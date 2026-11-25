@@ -29,6 +29,7 @@
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
 | `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
+| `DEV-007` | Codex | `dev/DEV-007-machine-evidence` | 提交时用宿主固定检查校验已选产物与版本，复验 TST-004 的机器结果和人工确认 |
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-006` | Codex | `dev/DEV-006-start-timeout` | 基于 `dac36f6` 处理原生创建超时、迟到回执与 TST-003 冒烟 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
