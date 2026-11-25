@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -17,6 +17,7 @@ const workspace = join(home, 'workspace')
 const overlay = join(home, 'workbench.yml')
 const usagePolicy = join(home, 'usage-policy.json')
 const evidencePolicy = join(home, 'evidence-policy.json')
+const forwardRefusal = join(home, 'forward-refusal')
 const checkedTitle = 'browser checked artifact'
 const checkedRevision = 'browser checked revision'
 const suggestionPrompt = 'browser execution suggestion'
@@ -93,7 +94,8 @@ function safeOutput() {
 async function start({ failAttach = false } = {}) {
   log = ''
   const env = { ...process.env, DSH_HOME: join(home, 'dsh'), DSH_AGENTS_HOME: join(home, 'agents'),
-    DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}` }
+    DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+    WORKBENCH_TEST_FORWARD_REFUSAL: forwardRefusal }
   delete env.WORKBENCH_TEST_FAIL_ATTACH
   delete env.WORKBENCH_TEST_HOLD_NATIVE_CREATE
   delete env.WORKBENCH_TEST_LATE_NATIVE_CREATE
@@ -527,23 +529,40 @@ try {
   await page.getByText('审阅结论文本', { exact: true }).waitFor()
   assert.equal(independentReviewRequests, 1)
   const forwardInputs = []
+  const forwardResults = []
   await page.route(commandRoute, async route => {
     const body = route.request().postDataJSON()
     if (body?.operation !== 'task.review.forward') return route.continue()
-    forwardInputs.push(body.input)
-    if (forwardInputs.length > 1) return route.continue()
+    const input = body.input
+    forwardInputs.push(input)
+    if (forwardInputs.length === 1) {
+      const { task } = await workbenchCommand('task.get', { taskId: input.taskId })
+      const digest = createHash('sha256').update(JSON.stringify([task.id, task.activeRunId, input.requestId])).digest('hex')
+      await writeFile(forwardRefusal, `workbench-review-forward-v2-${digest}`)
+    }
+    if (forwardInputs.length > 2) return route.continue()
     const response = await route.fetch()
-    assert.equal(response.status(), 200)
-    return route.abort('failed')
+    const status = response.status()
+    forwardResults.push({ status, ...status !== 200 && { code: (await response.json()).error.code } })
+    if (forwardInputs.length === 2 && status === 200) return route.abort('failed')
+    return route.fulfill({ response })
   })
   await button('把审阅发给主 Agent').click()
+  await page.locator('#feedback[data-error]').filter({ hasText: /rejected the forward before queuing/ }).waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  assert.deepEqual(forwardResults[0], { status: 409, code: 'INVALID_TRANSITION' })
+  await button('把审阅发给主 Agent').click()
+  await page.locator('body:not([aria-busy])').waitFor()
+  assert.deepEqual(forwardResults[1], { status: 200 }, 'The next click sends successfully without refreshing the page')
+  assert.notEqual(forwardInputs[1].requestId, forwardInputs[0].requestId)
+  assert.equal(forwardInputs[1].expectedRevision, forwardInputs[0].expectedRevision + 2)
   await page.locator('#feedback[data-error]').waitFor()
   await page.reload()
   await activate(page.getByRole('button', { name: /browser review task/ }))
   await activate(button('核对回送'))
   await page.getByText('已发给主 Agent', { exact: true }).waitFor()
-  assert.equal(forwardInputs.length, 2)
-  assert.deepEqual(forwardInputs[1], forwardInputs[0])
+  assert.equal(forwardInputs.length, 3)
+  assert.deepEqual(forwardInputs[2], forwardInputs[1])
   assert.equal(independentReviewRequests, 1)
   await page.unroute(commandRoute)
 
