@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
+import { stopBoundRootSession } from '../../../src/harness/session-lifecycle.mjs'
 import { observeBoundRootSession } from '../../../src/harness/session-observation.mjs'
 
-export const inject = ['workspaceRegistry', 'sessionQuery']
+export const inject = ['workspaceRegistry', 'sessionQuery', 'sessionController']
 
 export async function apply(ctx) {
   const { workspaceRegistry, sessionQuery } = ctx
@@ -64,6 +65,8 @@ export async function apply(ctx) {
     } finally {
       attached[Symbol.dispose]()
     }
+    assert.equal(await stopBoundRootSession({ ...observedBinding, sessionController: ctx.sessionController }, binding),
+      'stopped', 'a cold, idle root can be confirmed stopped without waking it')
   }
 }
 
