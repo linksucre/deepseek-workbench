@@ -154,6 +154,13 @@ export function evolveTask(detail, command, { expectedRevision, now }) {
       Object.assign(task, copyBrief(command.brief))
       task.status = 'draft'
       break
+    case 'choose':
+      stateOf(task, 'draft', 'ready', 'active', 'paused')
+      if (task.choice?.source === 'user' && command.choice.source === 'agent') {
+        throw new TaskError('INVALID_TRANSITION', 'The user has already selected an approach')
+      }
+      task.choice = structuredClone(command.choice)
+      break
     case 'ready':
       stateOf(task, 'draft')
       invalid(task.deliverables.length > 0 && task.criteria.length > 0,

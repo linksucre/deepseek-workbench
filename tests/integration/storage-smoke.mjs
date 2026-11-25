@@ -1,50 +1,11 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
-import { createRequire } from 'node:module'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import Ajv2020 from 'ajv/dist/2020.js'
+import { join } from 'node:path'
 import { createDraft, evolveTask } from '../../src/domain/task.mjs'
-import { openTaskRepository } from '../../src/storage/task-repository.mjs'
+import { nativeStorageFixture } from './native-storage-fixture.mjs'
 
-const checkout = resolve(process.argv[2] ?? '.')
-const loadJson = async url => JSON.parse(await readFile(url, 'utf8'))
-const baseline = await loadJson(new URL('../../harness-baseline.json', import.meta.url))
-assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
-const resolveHost = createRequire(join(checkout, 'packages/storage/storage-domain/package.json'))
-const importHost = (name, resolver = resolveHost) => import(pathToFileURL(resolver.resolve(name)).href)
-const { Context } = await importHost('@deepseek-ai/cordis')
-const { default: Storage } = await importHost('@deepseek-ai/dsh-storage')
-const { z } = await importHost('zod')
-const { DomainFacility, defineDomain, domainTable } = await import(pathToFileURL(
-  join(checkout, 'packages/storage/storage-domain/lib/index.js')).href)
-const { JsonStorageBackend } = await import(pathToFileURL(
-  join(checkout, 'packages/storage/storage-json/lib/index.js')).href)
-const schema = await loadJson(new URL('../../contracts/v1/schemas.json', import.meta.url))
-const ajv = new Ajv2020({ validateFormats: false })
-ajv.addSchema(schema)
-const validateDetail = ajv.compile({ $ref: `${schema.$id}#/$defs/TaskDetail` })
-
-async function useStorage(root, check) {
-  const ctx = new Context()
-  await ctx.plugin(Storage)
-  const backend = new JsonStorageBackend(root)
-  ctx.storage.backend.register('json', backend)
-  const storageDomain = new DomainFacility(ctx, { backend: 'json', routes: {} })
-  try {
-    const repo = await openTaskRepository({ storageDomain, defineDomain, domainTable, z, validateDetail })
-    try {
-      await check(repo)
-    } finally {
-      await repo.close()
-    }
-  } finally {
-    await backend.close()
-  }
-}
-
+const useStorage = await nativeStorageFixture(process.argv[2] ?? '.')
 const temp = await mkdtemp(join(tmpdir(), 'dsh-storage-smoke-'))
 const root = join(temp, 'store')
 const backup = join(temp, 'backup')
