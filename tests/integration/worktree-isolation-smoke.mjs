@@ -2,22 +2,35 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const checkout = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url), 'utf8'))
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
 
+const fixturePath = join(checkout, 'packages/experimental/worktree')
+const requireWorktree = createRequire(join(fixturePath, 'package.json'))
+const { canonicalPath } = await import(pathToFileURL(requireWorktree.resolve('@deepseek-ai/dsh-sandbox')).href)
+const workbenchPath = canonicalPath(fileURLToPath(new URL('../../', import.meta.url)))
+const artifactRoot = canonicalPath(join(workbenchPath, '.artifacts'))
+if (process.platform === 'darwin') {
+  const sharedTempRoots = ['/tmp', tmpdir()].map(canonicalPath)
+  const shared = sharedTempRoots.some(root => {
+    const path = relative(root, artifactRoot)
+    return !isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`)
+  })
+  if (shared) throw new Error('Worktree isolation requires a checkout outside the shared macOS temporary directories.')
+}
+
 const requireHost = createRequire(join(checkout, 'package.json'))
 const { register } = requireHost('tsx/esm/api')
 const unregister = register()
-const fixturePath = join(checkout, 'packages/experimental/worktree')
 const { git, harness, repository, testAgent } = await import(pathToFileURL(join(fixturePath, 'tests/harness.ts')).href)
 const { runCommand } = await import(pathToFileURL(join(fixturePath, 'src/process.ts')).href)
-const artifactRoot = new URL('../../.artifacts/', import.meta.url)
 await mkdir(artifactRoot, { recursive: true })
-const root = await repository(fileURLToPath(artifactRoot))
+const root = await repository(artifactRoot)
 const limits = { timeoutMs: 20_000, graceMs: 1_000, maxOutputBytes: 16_384 }
 const signal = () => AbortSignal.timeout(25_000)
 const tracked = 'tracked.txt'
