@@ -19,8 +19,12 @@ const usagePolicy = join(home, 'usage-policy.json')
 const evidencePolicy = join(home, 'evidence-policy.json')
 const checkedTitle = 'browser checked artifact'
 const checkedRevision = 'browser checked revision'
+const suggestionPrompt = 'browser execution suggestion'
+const suggestionReason = '先核对输入再决定怎么修改'
+const overrideReason = '沿用已验证的开发流程'
 const attempts = new Map()
 let independentReviewRequests = 0
+let suggested = false
 
 const provider = createServer(async (request, response) => {
   try {
@@ -39,13 +43,18 @@ const provider = createServer(async (request, response) => {
     const modeled = flow && body.tools?.some(tool => tool.name === 'present')
     const step = modeled ? (attempts.get(flow) ?? 0) + 1 : 0
     if (step) attempts.set(flow, step)
-    const tool = step === 1 ? 'present' : step === 2 ? 'workbench_submit' : null
+    const suggest = !suggested && serialized.includes(suggestionPrompt) &&
+      body.tools?.some(tool => tool.name === 'workbench_suggest')
+    if (suggest) suggested = true
+    const tool = suggest ? 'workbench_suggest' : step === 1 ? 'present' : step === 2 ? 'workbench_submit' : null
     const filename = flow === checkedRevision || flow === checkedTitle ? 'report.json'
       : flow === 'browser code task' ? 'code.md' : 'materials.md'
-    const args = tool === 'present' ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
+    const args = suggest ? { domain: 'development', methods: ['verify-first'], reason: suggestionReason, skillIds: [] }
+      : tool === 'present' ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
+    const completeUsage = flow === 'browser code task' || serialized.includes(suggestionPrompt)
     const events = [{
       type: 'message_start',
-      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 8, output_tokens: 0, ...(flow === 'browser code task' && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
+      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 8, output_tokens: 0, ...(completeUsage && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (tool) {
       events.push(
@@ -136,6 +145,7 @@ try {
     await page.getByRole('button', { name: '添加工作区', exact: true }).first().waitFor()
   }
   const button = name => page.getByRole('button', { name, exact: true })
+  const currentChoice = page.getByRole('region', { name: '当前执行方式' })
   await openWorkbench(await start())
   async function tabTo(target) {
     await target.waitFor()
@@ -173,11 +183,18 @@ try {
     await page.locator('body:not([aria-busy])').waitFor()
     await taskType.selectOption(domain)
     const choices = page.getByRole('group', { name: '执行方式' })
-    for (const label of labels) await activate(choices.getByRole('checkbox', { name: label }), 'Space')
-    await page.getByLabel('改选理由').fill(reason)
-    if (skill) await page.getByLabel(/技能 ID/).fill(skill)
+    for (const checkbox of await choices.getByRole('checkbox').all()) {
+      const label = await checkbox.evaluate(element => element.labels[0].textContent)
+      if (await checkbox.isChecked() !== labels.includes(label)) await activate(checkbox, 'Space')
+    }
+    const reasonField = page.getByLabel('改选理由')
+    await reasonField.fill('  ')
     await activate(button('保存执行方式'))
-    await page.getByText(reason, { exact: true }).waitFor()
+    assert.equal(await reasonField.evaluate(element => element.validationMessage), '请填写改选理由。')
+    await reasonField.fill(reason)
+    await page.getByLabel(/技能 ID（每行一个/).fill(skill)
+    await activate(button('保存执行方式'))
+    await currentChoice.getByText(reason, { exact: true }).waitFor()
     await page.locator('body:not([aria-busy])').waitFor()
   }
   async function create(title, template, { goal = '交付并核查该工作', criteria, afterStart } = {}) {
@@ -204,6 +221,7 @@ try {
     assert.ok(draftPrompt.includes(goal))
     if (afterStart) {
       assert.match(draftPrompt, /用户选定.*直接执行、复用已有流程/)
+      assert.match(draftPrompt, /任务类型：代码开发/)
       assert.match(draftPrompt, /技能 ID：fixture-check/)
     }
     await activate(button('发送'))
@@ -226,7 +244,21 @@ try {
     await activate(button('接受提交'))
   }
   await create('browser code task', 'development', {
-    afterStart: () => choose('development', ['直接执行', '复用已有流程'], '沿用已验证的开发流程', 'fixture-check'),
+    afterStart: async () => {
+      await page.getByLabel('发给 Agent').fill(suggestionPrompt)
+      await activate(button('发送'))
+      await page.getByText('交付已准备好', { exact: true }).waitFor()
+      await activate(button('刷新任务'))
+      await currentChoice.getByText('代码开发 · Agent 建议', { exact: true }).waitFor()
+      await currentChoice.getByText(suggestionReason, { exact: true }).waitFor()
+      assert.equal(await page.getByRole('checkbox', { name: '先查证' }).isChecked(), true)
+      const adjustedViewport = page.viewportSize()
+      await page.setViewportSize({ width: 390, height: 844 })
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
+      await choose('development', ['直接执行', '复用已有流程'], overrideReason, 'fixture-check')
+      assert.equal(await page.getByRole('checkbox', { name: '先查证' }).isChecked(), false)
+      await page.setViewportSize(adjustedViewport)
+    },
   })
   await waitReview()
   await page.locator('main').getByText('code.md', { exact: true }).waitFor()
@@ -279,6 +311,10 @@ try {
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
   await openWorkbench(await start())
+  await activate(page.getByRole('button', { name: /browser code task/ }))
+  await currentChoice.getByText('代码开发 · 用户选定', { exact: true }).waitFor()
+  await currentChoice.getByText(overrideReason, { exact: true }).waitFor()
+  await currentChoice.getByText('技能 ID：fixture-check', { exact: true }).waitFor()
   await activate(page.getByRole('button', { name: /browser material task/ }))
   await waitReview()
   await accept()

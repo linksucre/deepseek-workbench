@@ -205,12 +205,7 @@ function renderDetail() {
     actions.append(jump)
   }
   detail.replaceChildren(head, node('p', task.goal, 'goal'), actions, section('任务要求', brief))
-  if (task.choice) {
-    detail.append(section('执行方式', node('p', methodLabels(task.choice)),
-      node('p', task.choice.reason, 'choice-text'),
-      ...(task.choice.skillIds.length ? [node('p', task.choice.skillIds.join('、'), 'choice-text')] : []),
-      node('span', task.choice.source === 'user' ? '用户选定' : 'Agent 建议', 'subtle')))
-  }
+  if (task.choice) detail.append(choiceSummary(task.choice))
   if (['draft', 'ready', 'active', 'paused'].includes(task.status)) detail.append(choiceEditor(task))
   if (run?.rootSessionId) {
     const link = node('a', '返回 Harness')
@@ -454,7 +449,8 @@ function conversationPanel(task, metadata) {
         `验收条件：${task.criteria.map(criterion => criterion.description).join('；')}`,
         ...(task.materials.length ? [`材料：${task.materials.map(item => item.locator).join('；')}`] : []),
         ...(task.choice ? [
-          `执行方式（${task.choice.source === 'user' ? '用户选定' : 'Agent 建议'}）：${methodLabels(task.choice)}`,
+          `执行方式（${choiceSource(task.choice)}）：${choiceMethods(task.choice)}`,
+          `任务类型：${domains[task.choice.domain] ?? task.choice.domain}`,
           `依据：${task.choice.reason}`,
           ...(task.choice.skillIds.length ? [`技能 ID：${task.choice.skillIds.join('；')}`] : []),
         ] : ['请先选择做法。']),
@@ -481,8 +477,22 @@ function conversationPanel(task, metadata) {
   return area
 }
 
-function methodLabels(choice) {
-  return choice.methods.map(key => methods[key]).join('、')
+function choiceMethods(choice) {
+  return choice.methods.map(key => methods[key] ?? key).join('、')
+}
+
+function choiceSource(choice) {
+  return choice.source === 'user' ? '用户选定' : 'Agent 建议'
+}
+
+function choiceSummary(choice) {
+  const area = section('当前执行方式', node('strong', choiceMethods(choice)),
+    node('p', `${domains[choice.domain] ?? choice.domain} · ${choiceSource(choice)}`, 'subtle'),
+    node('p', choice.reason, 'choice-text'))
+  if (choice.skillIds.length) area.append(node('p', `技能 ID：${choice.skillIds.join('、')}`, 'choice-text'))
+  area.firstElementChild.id = 'execution-choice-title'
+  area.setAttribute('aria-labelledby', 'execution-choice-title')
+  return area
 }
 
 function choiceEditor(task) {
@@ -526,6 +536,7 @@ function choiceEditor(task) {
   reason.required = true
   reason.rows = 2
   reason.maxLength = 8192
+  reason.addEventListener('input', () => reason.setCustomValidity(''))
   reasonField.append(reason)
   const skillsField = node('label', '技能 ID（每行一个，可选）', 'field')
   const skills = node('textarea')
@@ -538,9 +549,15 @@ function choiceEditor(task) {
   form.append(domainField, options, reasonField, skillsField, actions)
   form.addEventListener('submit', event => {
     event.preventDefault()
+    const reasonText = reason.value.trim()
+    if (!reasonText) {
+      reason.setCustomValidity('请填写改选理由。')
+      reason.reportValidity()
+      return
+    }
     void taskAction('task.choose', { choice: {
       domain: domain.value, methods: [...selectedMethods], source: 'user',
-      reason: reason.value.trim(), skillIds: lines(skills.value),
+      reason: reasonText, skillIds: lines(skills.value),
     } })
   })
   return section('选择做法', form)
