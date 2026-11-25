@@ -38,7 +38,11 @@ export async function apply(ctx) {
       const result = await prompt(input, signal)
       if (await exists(forwardFault) && await readFile(forwardFault, 'utf8') === input.requestId) {
         await unlink(forwardFault)
-        throw new Error('Injected failure after native forward admission')
+        // An adapter may attach an error code without returning a native RemoteError.
+        throw Object.assign(new Error('Injected failure after native forward admission'), {
+          code: 'session/not-found',
+          details: { sessionId: input.sessionId },
+        })
       }
       return result
     }

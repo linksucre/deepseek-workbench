@@ -229,8 +229,9 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
           try {
             await conversation.queueMessage({ sessionId, requestId: nativeId, text }, timeout)
           } catch (error) {
-            // The pinned native prompt resolves its session before it admits the message.
-            if (error?.code === 'session/not-found') {
+            // The pinned native prompt can prove refusal only for the session it was given.
+            if (error?.isDSHRemoteError === true && error.code === 'session/not-found' &&
+                error.details?.sessionId === sessionId) {
               await confirmForward(principal, taskId, pending, 'rejected')
               throw forwardRefused()
             }
