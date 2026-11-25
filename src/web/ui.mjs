@@ -221,7 +221,7 @@ function renderDetail() {
     detail.append(conversationPanel(task, metadata), reviewPanel(task))
   }
   if (task.status === 'blocked') detail.append(recoveryEditor())
-  detail.append(usagePanel(task.id))
+  detail.append(contextPanel(task, artifacts), usagePanel(task.id))
   for (const submission of [...submissions].reverse()) {
     const current = submission.id === task.currentSubmissionId
     const area = section(current ? '当前提交' : '历史提交')
@@ -276,6 +276,110 @@ function evidencePanel(submission, decision) {
   }
   pane.append(rows)
   return pane
+}
+
+function handoffPanel(handoff) {
+  const area = node('div', undefined, 'handoff')
+  area.append(node('h3', '阶段交接'))
+  const stage = handoff.stage ? `阶段开始于 ${new Date(handoff.stage.openedAt).toLocaleString('zh-CN')}` : '尚未开始执行阶段'
+  const method = handoff.choice
+    ? `执行方式：${handoff.choice.methods.map(key => methods[key] ?? key).join('、')}` : ''
+  const latest = handoff.lastSubmission
+    ? `最近提交于 ${new Date(handoff.lastSubmission.submittedAt).toLocaleString('zh-CN')}` : ''
+  const outcome = handoff.lastDecision?.verdict === 'return' ? `退回原因：${handoff.lastDecision.reason}`
+    : handoff.lastDecision?.verdict === 'accept' ? '最近提交已验收' : ''
+  const lines = [stage, method, latest, outcome].filter(Boolean)
+  for (const line of lines) area.append(node('p', line))
+  if (handoff.stage) area.append(button('复制阶段交接', () => perform(async () => {
+    await navigator.clipboard.writeText([handoff.title, handoff.goal, ...lines,
+      '交付物', ...handoff.deliverables, '验收条件', ...handoff.criteria.map(item => item.description)].join('\n'))
+    feedback('已复制阶段交接')
+  })))
+  return area
+}
+
+function contextPanel(task, artifacts) {
+  const pane = node('details', undefined, 'task-context')
+  const body = node('div')
+  const state = node('p', undefined, 'subtle')
+  state.setAttribute('role', 'status')
+  pane.append(node('summary', '资料与阶段交接'), state, body)
+  let loading = false
+  let loaded = false
+  let latestPreview = 0
+
+  function renderPreview(view, preview) {
+    const { content } = view
+    if (content.kind === 'presentation') {
+      preview.append(node('p', '提交版本'), node('code', content.version ?? '未核验版本'),
+        node('p', content.locator, 'path'))
+    } else if (content.kind === 'url') {
+      const url = URL.parse(content.href)
+      if (!url || !['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+        throw new Error('此网页地址无法安全打开。')
+      }
+      const link = node('a', '打开原始网页')
+      link.href = url.href
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      preview.append(link)
+    } else {
+      preview.append(node('pre', content.text))
+    }
+  }
+
+  async function previewSource(source, label, preview) {
+    const requestId = ++latestPreview
+    preview.replaceChildren()
+    state.textContent = `正在读取 ${label}…`
+    try {
+      const view = await command('task.context.load', { taskId: task.id, source })
+      if (!pane.isConnected || requestId !== latestPreview) return
+      renderPreview(view, preview)
+      state.textContent = ''
+    } catch (error) {
+      if (pane.isConnected && requestId === latestPreview) {
+        state.textContent = error.code === 'NOT_FOUND' ? '此来源已不可预览，请刷新任务核对资料。' : error.message
+      }
+    }
+  }
+
+  async function load() {
+    if (loading || loaded) return
+    loading = true
+    state.textContent = '正在读取资料目录…'
+    try {
+      const value = await command('task.context.index', { taskId: task.id })
+      if (!pane.isConnected) return
+      const sources = node('ul', undefined, 'context-sources')
+      const preview = node('div', undefined, 'context-preview')
+      const freshness = { current: '近期记录', stale: '可能过期', unknown: '日期待核对' }
+      for (const entry of value.sources) {
+        const { source, origins } = entry
+        const submitted = artifacts.find(item => item.source.locator === source.locator &&
+          item.source.observedAt === source.observedAt && item.source.kind === source.kind)
+        const label = submitted?.locator.split(/[\\/]/).at(-1) ??
+          (source.kind === 'session-event' ? '会话记录' : source.locator)
+        const item = node('li')
+        item.append(button(`预览 ${label}`, () => previewSource(source, label, preview)),
+          node('span', `${origins.map(origin => origin === 'brief' ? '任务资料' : '已提交').join('、')} · ${source.observedAt.slice(0, 10)} · ${freshness[entry.freshness]}`, 'subtle'))
+        sources.append(item)
+      }
+      body.replaceChildren(value.sources.length ? sources : node('p', '没有可读取的资料。', 'subtle'),
+        preview, handoffPanel(value.handoff))
+      state.textContent = ''
+      loaded = true
+    } catch (error) {
+      if (pane.isConnected) {
+        state.textContent = error.message
+        body.replaceChildren(button('重新读取资料', load))
+      }
+    } finally {
+      loading = false
+    }
+  }
+  pane.addEventListener('toggle', () => { if (pane.open) void load() })
+  return section('任务资料', pane)
 }
 
 const countFormat = new Intl.NumberFormat('zh-CN')
@@ -568,6 +672,8 @@ function openTaskForm(task) {
   if (task) {
     taskForm.elements.title.value = task.title
     taskForm.elements.goal.value = task.goal
+    taskForm.elements.materials.value = [...new Set(task.materials.filter(item => item.kind !== 'session-event')
+      .map(item => item.locator))].join('\n')
     taskForm.elements.deliverables.value = task.deliverables.join('\n')
     taskForm.elements.criteria.value = task.criteria.map(item => item.description).join('\n')
   } else {
@@ -576,15 +682,41 @@ function openTaskForm(task) {
   taskDialog.showModal()
 }
 const lines = value => value.split('\n').map(item => item.trim()).filter(Boolean)
+function materialEntries(text, existing = []) {
+  const entries = existing.filter(item => item.kind === 'session-event')
+  const observedAt = new Date().toISOString()
+  for (const locator of new Set(lines(text))) {
+    const known = existing.filter(item => item.kind !== 'session-event' && item.locator === locator)
+    if (known.length) {
+      entries.push(...known)
+      continue
+    }
+    const kind = /^https?:\/\//i.test(locator) ? 'url' : 'file'
+    if (kind === 'url') {
+      const url = URL.parse(locator)
+      if (!url || url.username || url.password) throw new Error('资料网址需要有效的 HTTP 或 HTTPS 地址。')
+    }
+    if (locator.length > 8192) throw new Error('单条资料的位置最多 8192 字符。')
+    entries.push({ kind, locator, observedAt })
+  }
+  return entries
+}
+
 taskForm.addEventListener('submit', event => {
   event.preventDefault()
   const values = new FormData(taskForm)
   const fields = {
-    title: values.get('title').trim(), goal: values.get('goal').trim(), materials: editing?.materials ?? [],
+    title: values.get('title').trim(), goal: values.get('goal').trim(),
     deliverables: lines(values.get('deliverables')),
     criteria: lines(values.get('criteria')).map((description, index) => ({ id: `criterion-${index + 1}`, description })),
   }
   const showError = message => { taskForm.querySelector('.form-error').textContent = message }
+  try {
+    fields.materials = materialEntries(values.get('materials'), editing?.materials)
+  } catch (error) {
+    showError(error.message)
+    return
+  }
   if (!fields.title || !fields.goal || !fields.deliverables.length || !fields.criteria.length) {
     showError('请填写标题、目标、交付物和验收条件。')
     return

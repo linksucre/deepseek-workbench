@@ -187,8 +187,7 @@ try {
   ])
   const module = new URL('./fixtures/delivery-probe.mjs', import.meta.url).href
   const entry = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
-  const contextReader = new URL('./fixtures/context-reader.mjs', import.meta.url).href
-  await writeFile(patch, `\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n    - id: workbench-context-reader\n      name: ${JSON.stringify(contextReader)}\n`, { flag: 'a' })
+  await writeFile(patch, `\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`, { flag: 'a' })
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
   let rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
@@ -218,6 +217,24 @@ try {
   assert.equal((await rpc.workbench('task.get', { taskId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
   const emptyWorkspaceTasks = { workspaceId: otherWorkspace.workspaceId, limit: 1, cursor: null }
   assert.deepEqual((await rpc.workbench('task.list', emptyWorkspaceTasks)).items, [])
+  const taskId = draft.task.id
+  const source = brief.materials[0]
+  await rpc.workbench('task.context.index', { taskId }, { anonymous: true, status: 401 })
+  await rpc.workbench('task.context.load', { taskId, source }, { anonymous: true, status: 401 })
+  await rpc.workbench('task.context.index', { taskId }, { origin: 'https://untrusted.example', status: 403 })
+  await rpc.workbench('task.context.load', { taskId, source }, { origin: 'https://untrusted.example', status: 403 })
+  await rpc.workbench('task.context.load', { taskId, source: { ...source, locator: 'second.md' } }, { status: 404 })
+  const draftContext = await rpc.workbench('task.context.index', { taskId })
+  assert.deepEqual(draftContext.sources, [{ source, workspaceId: workspace.workspaceId, origins: ['brief'], freshness: 'stale' }])
+  assert.equal(draftContext.handoff.stage, null)
+  assert.deepEqual((await rpc.workbench('task.context.load', { taskId, source })).content, { kind: 'file', text: 'draft' })
+  const outside = { ...source, locator: '../first.md' }
+  const limited = await rpc.workbench('task.create', {
+    ...brief, workspaceId: otherWorkspace.workspaceId, requestId: 'out-of-scope-material', materials: [outside, source],
+  })
+  assert.deepEqual((await rpc.workbench('task.context.index', { taskId: limited.task.id })).sources, [])
+  await rpc.workbench('task.context.load', { taskId: limited.task.id, source: outside }, { status: 404 })
+  assert.equal(allModelRequests, 0)
   assert.equal((await rpc.workbench('task.start', { taskId: draft.task.id, requestId: 'start-draft',
     expectedRevision: draft.task.revision }, { status: 409 })).code, 'INVALID_TRANSITION')
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), draft)
@@ -304,13 +321,11 @@ try {
   const samples = []
   for (const [index, value] of ['version 1', 'version 2'].entries()) {
     const resultPath = join(root, `probe-${index}.json`)
-    const contextPath = join(root, `context-${index}.json`)
     await writeFile(join(root, 'second.md'), value)
     const restarted = await start({
       WORKBENCH_DELIVERY_WORKSPACE: workspace.workspaceId,
       WORKBENCH_DELIVERY_SESSION: sessionId,
       WORKBENCH_DELIVERY_RESULT: resultPath,
-      WORKBENCH_CONTEXT_TEST: JSON.stringify({ detail: submitted, output: contextPath }),
       ...(index > 0 && { WORKBENCH_DELIVERY_PREVIOUS: join(root, `probe-${index - 1}.json`) }),
     })
     assert.deepEqual(await restarted.workbench('task.get', { taskId: draft.task.id }), submitted)
@@ -323,15 +338,17 @@ try {
     }, 'authorized native delivery selection')
     assert.equal(sample.latest[0].version, hash(value))
     assert.equal(sample.current[0].version, hash(value))
-    const context = await until(async () => {
-      try { return JSON.parse(await readFile(contextPath, 'utf8')) }
-      catch (error) { if (error.code !== 'ENOENT') throw error }
-    }, 'native context source lookup')
-    assert.equal(context.index.sources[0].freshness, 'stale')
-    assert.equal(context.index.handoff.lastSubmission.id, submitted.task.currentSubmissionId)
-    assert.deepEqual(context.preview.content, { kind: 'file', text: 'draft' })
-    assert.deepEqual(context.presented.content, { kind: 'presentation',
-      locator: submitted.artifacts[0].locator, version: hash('version 1') })
+    const context = await restarted.workbench('task.context.index', { taskId })
+    assert.equal(context.sources[0].freshness, 'stale')
+    assert.ok(context.sources.every(source => !Object.hasOwn(source, 'content')))
+    assert.equal(context.handoff.lastSubmission.id, submitted.task.currentSubmissionId)
+    assert.equal(context.handoff.stage.runId, submitted.task.activeRunId)
+    assert.deepEqual(context.handoff.choice, submitted.task.choice)
+    const preview = await restarted.workbench('task.context.load', { taskId, source })
+    const presented = await restarted.workbench('task.context.load', { taskId, source: submitted.artifacts[0].source })
+    assert.deepEqual(preview.content, { kind: 'file', text: 'draft' })
+    assert.deepEqual(presented.content, { kind: 'presentation', locator: submitted.artifacts[0].locator,
+      version: hash('version 1') })
     assert.equal(allModelRequests, onSubmission)
     samples.push(sample)
     await stop()
@@ -363,6 +380,9 @@ try {
     verdict: 'return', reason: 'Review the updated file', requestId: 'return',
   })
   assert.equal(returned.task.status, 'active')
+  const handoff = (await rpc.workbench('task.context.index', { taskId })).handoff
+  assert.equal(handoff.lastDecision.verdict, 'return')
+  assert.equal(handoff.lastDecision.reason, 'Review the updated file')
   await prompt('Present the updated file and submit it', returned.task.revision)
   await until(async () => modelSteps >= 8 && await idle(), 'native re-presentation and re-submission')
   const resubmitted = await rpc.workbench('task.get', { taskId: draft.task.id })
@@ -659,7 +679,7 @@ try {
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)
-  console.log('PASS: native authorization, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
+  console.log('PASS: native authorization, task context, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
 } finally {
   releaseForged()
   await stop()

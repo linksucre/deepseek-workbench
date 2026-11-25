@@ -7,6 +7,7 @@ import { mountWorkbenchTools } from './host-tools.mjs'
 import { createHostTaskUsage } from '../usage/host-usage.mjs'
 import { createUsagePolicy } from '../usage/usage-policy.mjs'
 import { createHostDelegation } from './host-delegation.mjs'
+import { createHostTaskContext } from './host-context.mjs'
 import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
@@ -107,10 +108,15 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     },
     lookupRate: policy.lookupRate,
   })
+  const context = createHostTaskContext({
+    app, repository, owner, fs: ctx.fs, workspaceRegistry: ctx.workspaceRegistry, sessionQuery: ctx.sessionQuery,
+  })
   const methods = {
     'task.create': input => app.create(owner, input),
     'task.get': input => app.get(owner, input.taskId),
     'task.list': input => app.list(owner, input),
+    'task.context.index': input => context.get(owner, input.taskId),
+    'task.context.load': input => context.load(owner, input.taskId, input.source),
     'task.usage': async input => policy.applyBudget(await usage(owner, input.taskId, { signal: AbortSignal.timeout(10_000) })),
     'task.updateBrief': input => app.updateBrief(owner, input),
     'task.ready': input => app.ready(owner, input),

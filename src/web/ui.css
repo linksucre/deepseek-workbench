@@ -96,3 +96,12 @@ textarea { resize: vertical }
 .usage-fields dt { font-size: .82rem; color: var(--muted); }
 .usage-fields dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .budget-warning { color: var(--warning); }
+.task-context summary { cursor: pointer }
+.context-sources { list-style: none; padding: 0 }
+.context-sources > li { display: grid; justify-items: start; gap: .2rem; padding: .5rem 0; border-bottom: 1px solid var(--line) }
+.context-sources button { max-width: 100%; text-align: left; overflow-wrap: anywhere }
+.context-preview:not(:empty) { margin: .8rem 0; border-left: 3px solid var(--primary); padding: .5rem .8rem }
+.context-preview pre { max-height: 26rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.handoff h3 { font-size: .94rem; margin: .8rem 0 .15rem }
+.handoff p { margin: .15rem 0; overflow-wrap: anywhere }
+.handoff button { margin-top: .4rem }

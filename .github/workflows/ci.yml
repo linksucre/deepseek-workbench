@@ -57,6 +57,8 @@ jobs:
       - run: node tests/integration/usage-host-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Verify persisted task context
         run: node tests/integration/context-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Verify native worktree write isolation
+        run: node tests/integration/worktree-isolation-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Measure warm task list pagination
         run: node tests/integration/list-performance.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Install pinned browser

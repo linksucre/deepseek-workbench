@@ -109,6 +109,8 @@ try {
   await mkdir(workspace)
   await writeFile(join(workspace, 'code.md'), 'Code change and checks')
   await writeFile(join(workspace, 'materials.md'), 'Initial version')
+  const briefText = '<handoff>先核对材料，再形成报告。</handoff>'
+  await writeFile(join(workspace, 'brief.md'), briefText)
   await writeFile(join(workspace, 'report.json'), '{broken')
   await writeFile(evidencePolicy, JSON.stringify([{
     workspace: await realpath(workspace), taskTitle: checkedTitle, criterionId: 'criterion-1',
@@ -128,6 +130,12 @@ try {
   })
   const page = await browser.newPage()
   page.on('pageerror', error => errors.push(error.message))
+  const contextReads = []
+  page.on('request', request => {
+    if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v1/command')) return
+    const { operation } = request.postDataJSON()
+    if (operation.startsWith('task.context.')) contextReads.push(operation)
+  })
   page.setDefaultTimeout(15_000)
   async function openWorkbench(launch) {
     const url = new URL(launch)
@@ -167,7 +175,7 @@ try {
   const goalStart = '材料检索与核验\n<review>'
   const goalEnd = '</review>'
   const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
-  async function create(title, template, goal = '交付并核查该工作', criteria) {
+  async function create(title, template, goal = '交付并核查该工作', criteria, materials) {
     await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
     await tabTo(page.getByLabel('标题'))
@@ -175,8 +183,21 @@ try {
     await tabTo(page.getByLabel('目标'))
     await page.keyboard.insertText(goal)
     if (criteria) await page.getByLabel(/验收条件/).fill(criteria)
+    if (materials) await page.getByLabel(/资料来源/).fill(materials)
+    const onSave = operation => page.waitForResponse(response =>
+      response.url().endsWith('/workbench/v1/command') && response.request().method() === 'POST' &&
+      response.request().postDataJSON().operation === operation)
+    const created = materials ? onSave('task.create') : null
     await activate(button('保存任务'))
     await page.getByRole('heading', { name: title }).waitFor()
+    if (created) {
+      const original = (await (await created).json()).result.task.materials
+      await activate(button('编辑任务'))
+      assert.equal(await page.getByLabel(/资料来源/).inputValue(), materials)
+      const edited = onSave('task.updateBrief')
+      await activate(button('保存任务'))
+      assert.deepEqual((await (await edited).json()).result.task.materials, original)
+    }
     await activate(button('标为就绪'))
     await activate(button('启动 Agent 会话'))
     const conversation = page.getByRole('region', { name: '执行会话' })
@@ -252,13 +273,32 @@ try {
   await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
   await page.getByText(/估算费用：CNY 0\./).waitFor()
 
-  await create('browser material task', 'documents', longGoal)
+  const referenceUrl = 'https://example.test/reference'
+  await create('browser material task', 'documents', longGoal, undefined, `brief.md\n${referenceUrl}`)
   await waitReview()
+  assert.deepEqual(contextReads, [])
+  const library = page.locator('.task-context')
+  await activate(library.locator('summary'))
+  await button('预览 brief.md').waitFor()
+  assert.deepEqual(contextReads, ['task.context.index'])
+  await activate(button('预览 brief.md'))
+  const preview = library.locator('.context-preview')
+  await preview.getByText(briefText, { exact: true }).waitFor()
+  assert.equal(await preview.locator('handoff').count(), 0)
+  await button(`预览 ${referenceUrl}`).click()
+  assert.equal(await preview.getByRole('link', { name: '打开原始网页' }).getAttribute('href'), referenceUrl)
+  await button('预览 materials.md').click()
+  await preview.getByText('提交版本', { exact: true }).waitFor()
+  const recordedVersion = await preview.locator('code').innerText()
+  assert.match(recordedVersion, /^[a-f0-9]{64}$/)
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
   await openWorkbench(await start())
   await activate(page.getByRole('button', { name: /browser material task/ }))
   await waitReview()
+  await activate(library.locator('summary'))
+  await button('预览 materials.md').click()
+  await preview.getByText(recordedVersion, { exact: true }).waitFor()
   await accept()
   await page.locator('#feedback[data-error]').waitFor()
   const feedback = page.getByRole('status').filter({ hasText: /artifact .*changed/i })
@@ -268,6 +308,13 @@ try {
   assert.equal(await longText.locator('review').count(), 0)
   await page.getByLabel('退回理由').fill('请重新展示修改后的版本')
   await activate(button('退回修改'))
+  await page.locator('.state').getByText('执行中', { exact: true }).waitFor()
+  await activate(library.locator('summary'))
+  await library.getByText('退回原因：请重新展示修改后的版本', { exact: true }).waitFor()
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin })
+  await activate(library.getByRole('button', { name: '复制阶段交接' }))
+  await page.getByRole('status').filter({ hasText: '已复制阶段交接' }).waitFor()
+  assert.match(await page.evaluate(() => navigator.clipboard.readText()), /退回原因：请重新展示修改后的版本/)
   await page.getByLabel('发给 Agent').fill('browser material revision')
   await button('发送').click()
   await waitReview()
@@ -320,7 +367,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, context preview and stage handoff, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()

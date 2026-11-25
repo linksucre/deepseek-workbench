@@ -155,6 +155,20 @@
       "output": "PromptReceipt",
       "actor": "user",
       "requirement": "FR-010"
+    },
+    {
+      "id": "task.context.index",
+      "input": "GetTask",
+      "output": "TaskContextIndex",
+      "actor": "user",
+      "requirement": "FR-009"
+    },
+    {
+      "id": "task.context.load",
+      "input": "ReadContextSource",
+      "output": "ContextSourceView",
+      "actor": "user",
+      "requirement": "FR-009"
     }
   ]
 }

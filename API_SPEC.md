@@ -24,3 +24,7 @@
 [`task.delegate`、`task.reviews`、`task.review.reconcile`、`task.review.forward`](contracts/v1/operations.json) 由已认证的本机 owner 调用。派发输入提供问题与选中材料；同一次调用重放返回持久化审阅状态。核对只读取原生会话，依据已验证的第一轮结束事件更新状态。回送要求活动 Run 和已有完整摘要，复用 `task.prompt` 的显式排队及重放语义。设计依据见 [独立审阅](docs/design/M3-BOUNDED-REVIEW.md)。
 
 部署侧可启用固定产物检查。`task.submit` 和模型提交工具使用相同的宿主检查入口，在原有 `Submission.evidence` 中返回 `machine` 结果。通过的结果满足对应条件，`confirmedCriteria` 继续承载本次用户确认。文件未入选时返回 `INVALID`，检查所见版本与候选版本不一致时返回 `ARTIFACT_DRIFT`。规则的作用域见 [固定产物检查设计](docs/design/M1-MACHINE-EVIDENCE.md)。
+
+## 任务资料与阶段交接
+
+`task.context.index` 接收任务 ID，返回授权来源的元数据及最近阶段交接。`task.context.load` 还接收已授权、已登记的完整 `SourceRef`，返回文件文本、原始网页地址、原生会话文本或提交版本。两者均为本机 owner 只读命令，经过同源认证和任务范围检查。读取期间任务修订改变返回 `REVISION_CONFLICT`，未知或不可读来源返回 `NOT_FOUND`。工作台根据索引条目按需加载正文。 [资料设计](docs/design/M2-WORKBENCH-CONTEXT.md)

@@ -5,7 +5,7 @@ import { mountWorkbenchHost } from './host-runtime.mjs'
 import { installReviewerIsolation } from '../harness/bounded-review.mjs'
 import { mountWorkbenchPage } from '../web/host-page.mjs'
 
-export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery', 'tools', 'agents', 'subagents']
+export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery', 'fs', 'tools', 'agents', 'subagents']
 
 async function readPolicy(path) {
   if (path === undefined) return undefined

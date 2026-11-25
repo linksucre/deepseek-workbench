@@ -9,7 +9,7 @@ const unavailable = new Set(['FS_NOT_FOUND', 'FS_PERMISSION_DENIED', 'FS_NOT_REG
 function externalLink(locator) {
   if (!/^https?:\/\//iu.test(locator) || /[\u0000-\u0020\u007f\\]/u.test(locator)) return
   const url = URL.parse(locator)
-  if (url && !url.username && !url.password) return url.href
+  if (url && !url.username && !url.password && url.href.length <= 8192) return url.href
 }
 
 function eventLocation(locator) {
