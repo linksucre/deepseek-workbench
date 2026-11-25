@@ -52,6 +52,7 @@
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
 | `DEV-008` | Codex | `dev/DEV-008-execution-choice` | 基于 `41ad708` 补齐既有执行方式契约的组合选择与任务说明，验证 FR-003 交互 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-recovery-browser` | 从 `04ff750` 补验已存在的任务表单及待核对浏览器操作 |
+| `DEV-008` | Codex 协作 Agent | `dev/DEV-008-workspace-selection` | 从 `8ad4e9b` 修复慢请求期间连续切换工作区造成的旧列表与详情，运行 Chromium 红绿复验 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
