@@ -7,6 +7,7 @@ export async function mountWorkbenchPage(ctx) {
     ['/workbench', 'index.html', 'text/html; charset=utf-8'],
     ['/workbench/ui.css', 'ui.css', 'text/css; charset=utf-8'],
     ['/workbench/ui.mjs', 'ui.mjs', 'text/javascript; charset=utf-8'],
+    ['/workbench/context-link.mjs', '../domain/context-link.mjs', 'text/javascript; charset=utf-8'],
   ]) {
     const body = await readFile(new URL(file, import.meta.url))
     ctx.effect(() => ctx.webServer.register({

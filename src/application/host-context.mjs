@@ -1,3 +1,4 @@
+import { safeContextLink } from '../domain/context-link.mjs'
 import { TaskError } from '../domain/task.mjs'
 import { observeBoundRootSession } from '../harness/session-observation.mjs'
 import { createTaskContext } from './task-context.mjs'
@@ -5,12 +6,6 @@ import { createTaskContext } from './task-context.mjs'
 const maxSourceBytes = 64 * 1024
 const missing = () => new TaskError('NOT_FOUND', 'Task context source is unavailable')
 const unavailable = new Set(['FS_NOT_FOUND', 'FS_PERMISSION_DENIED', 'FS_NOT_REGULAR_FILE', 'FS_TOO_LARGE'])
-
-function externalLink(locator) {
-  if (!/^https?:\/\//iu.test(locator) || /[\u0000-\u0020\u007f\\]/u.test(locator)) return
-  const url = URL.parse(locator)
-  if (url && !url.username && !url.password && url.href.length <= 8192) return url.href
-}
 
 function eventLocation(locator) {
   let parts
@@ -92,7 +87,7 @@ export function createHostTaskContext({ owner, app, repository, fs, workspaceReg
       const workspace = workspaceFor(request)
       if (!workspace) return false
       const { source, detail } = request
-      if (source.kind === 'url') return externalLink(source.locator) !== undefined
+      if (source.kind === 'url') return safeContextLink(source.locator) !== undefined
       if (source.kind === 'session-event') return boundSession(workspace, detail, source) !== undefined
       if (source.kind !== 'file') return false
       return Boolean(await availableFile(fs, workspace.path, source.locator, AbortSignal.timeout(5000)))
@@ -103,7 +98,7 @@ export function createHostTaskContext({ owner, app, repository, fs, workspaceReg
       const { source, detail, workspaceId } = request
       const signal = AbortSignal.timeout(5000)
       if (source.kind === 'url') {
-        const href = externalLink(source.locator)
+        const href = safeContextLink(source.locator)
         if (!href) throw missing()
         return { kind: 'url', href }
       }
@@ -123,7 +118,7 @@ export function createHostTaskContext({ owner, app, repository, fs, workspaceReg
             before.target.targetKey !== current.target.targetKey || before.version !== current.version) throw missing()
         let text
         try {
-          text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+          text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes)
         } catch (error) {
           if (error instanceof TypeError) throw missing()
           throw error

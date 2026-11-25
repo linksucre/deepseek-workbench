@@ -47,5 +47,13 @@ export async function apply(ctx) {
   const submitted = prior ? JSON.parse(await readFile(prior, 'utf8')).latest : latest
   const current = await service.observe({ ...input, principal: { kind: 'user', actorId: 'reviewer' }, artifacts: submitted })
   assert.equal(current[0].artifactId, submitted[0].id)
-  await writeFile(target, JSON.stringify({ latest, first, current }), { mode: 0o600 })
+  const session = await ctx.sessionQuery.observeSession(sessionId)
+  let toolResultSeq
+  try {
+    toolResultSeq = session.events.find(event => event.type === 'tool/result')?.seq
+    assert.ok(Number.isSafeInteger(toolResultSeq))
+  } finally {
+    session[Symbol.dispose]()
+  }
+  await writeFile(target, JSON.stringify({ latest, first, current, toolResultSeq }), { mode: 0o600 })
 }

@@ -643,6 +643,36 @@ try {
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
   await stop()
 
+  // Exercise material references from an earlier task record through the real command.
+  const archive = join(root, 'archived-context')
+  await cp(backup, archive, { recursive: true })
+  const archivedTaskFile = join(archive, 'storages', 'workbench_tasks', 'tasks', `${taskId}.json`)
+  const archived = JSON.parse(await readFile(archivedTaskFile, 'utf8'))
+  const archivedMessages = [
+    conversation.messages.find(item => item.role === 'user' && item.text === marker),
+    conversation.messages.find(item => item.role === 'assistant' && item.text === 'done'),
+  ]
+  const observedAt = brief.materials[0].observedAt
+  const archivedSources = archivedMessages.map(item =>
+    ({ kind: 'session-event', locator: JSON.stringify([sessionId, item.seq]), observedAt }))
+  const unrelatedSource = { ...archivedSources[0], locator: JSON.stringify([randomUUID(), archivedMessages[0].seq]) }
+  const toolSource = { ...archivedSources[0], locator: JSON.stringify([sessionId, samples[0].toolResultSeq]) }
+  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, toolSource)
+  await writeFile(archivedTaskFile, JSON.stringify(archived))
+  rpc = await start({}, { dataHome: archive })
+  const archivedContext = await rpc.workbench('task.context.index', { taskId })
+  assert.deepEqual(archivedContext.sources.filter(entry => entry.origins.includes('brief') &&
+    entry.source.kind === 'session-event' && entry.source.locator !== toolSource.locator)
+    .map(entry => entry.source), archivedSources)
+  for (const [index, archivedSource] of archivedSources.entries()) {
+    assert.deepEqual((await rpc.workbench('task.context.load', { taskId, source: archivedSource })).content,
+      { kind: 'message', role: archivedMessages[index].role, text: archivedMessages[index].text })
+  }
+  await rpc.workbench('task.context.load', { taskId, source: unrelatedSource }, { status: 404 })
+  await rpc.workbench('task.context.load', { taskId, source: toolSource }, { status: 404 })
+  assert.equal(allModelRequests, beforeRollback)
+  await stop()
+
   await cp(backup, restored, { recursive: true })
   const reservedPath = join(root, 'before-native-create.json')
   rpc = await start({ WORKBENCH_TEST_HOLD_NATIVE_CREATE: reservedPath }, { dataHome: restored })

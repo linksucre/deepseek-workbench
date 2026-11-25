@@ -1,3 +1,5 @@
+import { safeContextLink } from './context-link.mjs'
+
 const $ = id => document.getElementById(id)
 const workspace = $('workspace')
 const taskForm = $('task-form')
@@ -345,12 +347,10 @@ function contextPanel(task, artifacts) {
       preview.append(node('p', '提交版本'), node('code', content.version ?? '未核验版本'),
         node('p', content.locator, 'path'))
     } else if (content.kind === 'url') {
-      const url = URL.parse(content.href)
-      if (!url || !['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('此网页地址无法安全打开。')
-      }
+      const href = safeContextLink(content.href)
+      if (!href) throw new Error('此网页地址无法安全打开。')
       const link = node('a', '打开原始网页')
-      link.href = url.href
+      link.href = href
       link.target = '_blank'
       link.rel = 'noopener noreferrer'
       preview.append(link)
@@ -771,7 +771,7 @@ function openTaskForm(task) {
   if (task) {
     taskForm.elements.title.value = task.title
     taskForm.elements.goal.value = task.goal
-    taskForm.elements.materials.value = [...new Set(task.materials.filter(item => item.kind !== 'session-event')
+    taskForm.elements.materials.value = [...new Set(task.materials.filter(editableMaterial)
       .map(item => item.locator))].join('\n')
     taskForm.elements.deliverables.value = task.deliverables.join('\n')
     taskForm.elements.criteria.value = task.criteria.map(item => item.description).join('\n')
@@ -781,19 +781,20 @@ function openTaskForm(task) {
   taskDialog.showModal()
 }
 const lines = value => value.split('\n').map(item => item.trim()).filter(Boolean)
+function editableMaterial(source) {
+  return source.kind !== 'session-event' && !/[\r\n]/u.test(source.locator)
+}
+
 function materialEntries(text, existing = []) {
-  const entries = existing.filter(item => item.kind === 'session-event')
+  const locators = new Set(text.split(/\r?\n/u).filter(locator => locator.length > 0))
+  const entries = existing.filter(item => !editableMaterial(item) || locators.has(item.locator))
+  const known = new Set(existing.filter(editableMaterial).map(item => item.locator))
   const observedAt = new Date().toISOString()
-  for (const locator of new Set(lines(text))) {
-    const known = existing.filter(item => item.kind !== 'session-event' && item.locator === locator)
-    if (known.length) {
-      entries.push(...known)
-      continue
-    }
-    const kind = /^https?:\/\//i.test(locator) ? 'url' : 'file'
-    if (kind === 'url') {
-      const url = URL.parse(locator)
-      if (!url || url.username || url.password) throw new Error('资料网址需要有效的 HTTP 或 HTTPS 地址。')
+  for (const locator of locators) {
+    if (known.has(locator) || !locator.trim()) continue
+    const kind = /^https?:\/\//iu.test(locator.trimStart()) ? 'url' : 'file'
+    if (kind === 'url' && !safeContextLink(locator)) {
+      throw new Error('请输入不含空格或登录信息的 HTTP 或 HTTPS 地址。')
     }
     if (locator.length > 8192) throw new Error('单条资料的位置最多 8192 字符。')
     entries.push({ kind, locator, observedAt })
