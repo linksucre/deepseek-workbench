@@ -37,6 +37,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
+| `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
@@ -126,3 +127,7 @@ DEV-007 的 `d080fd8` 记录从原生工具结果读取的备选设计。固定�
 DEV-007 设计 `9bcb8d3`、实现 `934a3ab` 已进入评审。运行时按部署策略对可信展示中的文件执行非空或 UTF-8 JSON 检查，同次稳定读取核对交付哈希，结果保存在原 Submission 的机器证据字段。无须执行项目脚本或调用模型。已合入 DEV-012 `514756d` 的伪造证据及越权回归，也保留 DEV-008 `09c77eb` 可按条件展开证据的面板。
 
 联调候选 `c3931fe` 通过 26 项回归、相对 main 的仓库门禁、actionlint、真实 Host 授权和交付冒烟以及独立 npm 归档的 Chromium 验收。浏览器覆盖 JSON 失败阻止接受、退回重交、仅确认剩余人工条件、重启后分别查看当前和历史证据。采用 DEV-005 的本地受保护 Harness 基线，发布基线与远端 CI 待评审。
+
+DEV-011 隔离试验 `c0cdfa8`（文档 `6e4e0d4`）在固定 Harness 原生 `workspace-write` 沙箱通过。两个独立 Session 写各自同名文件，跨写另一 checkout、源 checkout 和共享 Git 索引被拒绝。退出保留结果，模拟所有者合并试算检出冲突并保留两支。试验无远端、无模型请求，生产写入派发仍待评审。
+
+组合候选 `41ad708` 以 DEV-007 与 DEV-008 的联调证据提交 `c3931fe` 为底叠加隔离试验。26 项回归、相对 main 的仓库门禁、actionlint、原生 worktree 和实际 Host 全链路、存储恢复及独立 npm 归档 Chromium 流程通过。浏览器覆盖真实失败机器证据、修改后重交的通过证据以及历史失败记录保留。
