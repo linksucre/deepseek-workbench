@@ -52,6 +52,7 @@
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-timeout-verification` | 从 `97af999` 补验 TST-010 审阅超时、资源清理和并发插槽释放 |
 | `DEV-011` | Codex | `dev/DEV-011-review-recovery-regression` | 在候选上封装冷根及两个回执问题的真实 Host 回归，只改测试和评审说明 |
+| `DEV-011` | Codex | `dev/DEV-011-review-receipts` | 基于 M3 候选修复冷根派发与审阅核对和回送回执，独立复验专项 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-probe-verification` | 从 `fb5692b` 隔离复验冷根、核对与回送专项红测，只改测试和对应说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
