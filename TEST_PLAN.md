@@ -19,4 +19,10 @@
 
 [Harness integration](.github/workflows/ci.yml) 在 macOS 上运行上下文冒烟、原生 worktree 写入隔离试验和分页基准。worktree 试验使用临时 Git 仓库，验证两条分支的写入隔离和冲突后的结果保留。分页输出包括机器、Node 版本、样本数及 p95。浏览器使用独立安装的本地归档。
 
-DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，核对冷根派发配额、显式核对请求摘要及回送与普通消息的作用域。当前候选已知失败，评审后的实现需在同一预期下通过，再纳入默认门禁。
+DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，也可用下列参数逐一运行：
+
+- `--review-recovery-regressions=cold-root` 先观察原生根会话确实未加载，再核对拒绝无副作用、激活后仍可派发两次。
+- `--review-recovery-regressions=reconcile-receipt` 核对请求摘要、重启重放及无新增写入或模型请求。
+- `--review-recovery-regressions=forward-scope` 等普通消息出现在原生会话历史后回送，并核对两条消息各自的原生请求 ID 与数量。
+
+当前候选的三个修订回归均预期退出 1。默认冒烟保留退出 0。评审后的实现需使修订回归通过，再纳入默认门禁。

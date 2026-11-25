@@ -11,7 +11,12 @@ import { fileURLToPath } from 'node:url'
 const checkout = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url)))
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
-const checkReviewRecovery = process.argv.includes('--review-recovery-regressions')
+const reviewProbeFlag = '--review-recovery-regressions'
+const reviewProbes = ['cold-root', 'reconcile-receipt', 'forward-scope']
+const probeOption = process.argv.slice(3).find(arg => arg === reviewProbeFlag || arg.startsWith(reviewProbeFlag + '='))
+const selectedProbes = probeOption === reviewProbeFlag ? reviewProbes
+  : probeOption ? [probeOption.slice(reviewProbeFlag.length + 1)] : []
+for (const probe of selectedProbes) assert.ok(reviewProbes.includes(probe), `Unknown DEV-011 review probe: ${probe}`)
 const reviewFailures = []
 function expectReviewRecovery(name, actual, expected) {
   try {
@@ -505,22 +510,54 @@ try {
   const beforeForwardReplay = allModelRequests
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
   assert.equal(allModelRequests, beforeForwardReplay)
-  if (checkReviewRecovery) {
-    const collisionInput = { ...forward, requestId: 'shared-key' }
-    const ordinary = { taskId: fresh.task.id, expectedRevision: reviewedTask.task.revision,
-      requestId: 'review-forward:shared-key', text: 'Ordinary prompt with an independent public request ID' }
+  if (selectedProbes.includes('forward-scope')) {
+    async function nativeUserMessages() {
+      const page = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 30 })
+      return page.records.map(record => record.event).filter(event =>
+        event.type === 'user/message' && event.data.source?.kind === 'user')
+    }
+
+    const { revision } = (await rpc.workbench('task.get', { taskId: fresh.task.id })).task
+    const ordinary = { taskId: fresh.task.id, expectedRevision: revision, requestId: 'review-forward:shared-key',
+      text: 'Ordinary prompt with an independent public request ID' }
+    const digest = requestId => createHash('sha256')
+      .update(JSON.stringify([fresh.task.id, reviewedTask.task.activeRunId, requestId])).digest('hex')
+    const ordinaryId = `workbench-${digest(ordinary.requestId)}`
     await rpc.workbench('task.prompt', ordinary)
+    const ordinaryEvent = await until(async () => (await nativeUserMessages()).find(event =>
+      event.data.content.some(block => block.type === 'text' && block.text === ordinary.text)),
+    'ordinary prompt committed in the native session')
+    assert.equal(ordinaryEvent.data.source.rpcId, ordinaryId)
+
+    const collisionInput = { ...forward, expectedRevision: (await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision,
+      requestId: 'shared-key' }
     const result = await rpc.workbench('task.review.forward', collisionInput, { status: [200, 400, 409] })
     expectReviewRecovery('Forward and prompt request IDs have independent native scopes',
       result, { sessionId: parentId, accepted: true })
+
+    function followUpReviews(events) {
+      return events.filter(event => event.seq > ordinaryEvent.seq && event.data.content.some(block =>
+        block.type === 'text' && block.text.includes(review.reviewId) && block.text.includes('independent review')))
+    }
+    if (result.accepted === true) {
+      await until(async () => followUpReviews(await nativeUserMessages()).length > 0,
+        'forwarded review committed in the native session')
+    }
     await until(async () => {
-      const conversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 30 })
-      return !conversation.running && conversation.messages.some(message => message.text === ordinary.text)
-    }, 'ordinary prompt with a potentially colliding request ID')
+      const state = await rpc('session/state', { sessionId: parentId })
+      return !state.running && state.queue?.length === 0
+    }, 'root settles after the prompt and forward')
+    const userEvents = await nativeUserMessages()
+    const forwardId = `workbench-review-forward-v2-${digest(collisionInput.requestId)}`
+    expectReviewRecovery('Native history records one ordinary prompt and one forwarded review with separate IDs', {
+      ordinary: userEvents.filter(event => event.data.content.some(block => block.type === 'text' &&
+        block.text === ordinary.text)).map(event => event.data.source.rpcId),
+      forwarded: followUpReviews(userEvents).map(event => event.data.source.rpcId),
+    }, { ordinary: [ordinaryId], forwarded: [forwardId] })
   }
   const beforeRecoveryUsage = await rpc.workbench('task.usage', { taskId: fresh.task.id })
   assert.equal(beforeRecoveryUsage.completeness, 'complete')
-  const recoveryInput = { ...reviewInput, expectedRevision: reviewedTask.task.revision,
+  const recoveryInput = { ...reviewInput, expectedRevision: (await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision,
     requestId: 'lost-review-receipt', material: 'review recovery probe' }
   await rpc.workbench('task.delegate', recoveryInput, { status: 503 })
   const pendingReviews = (await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items
@@ -750,8 +787,9 @@ try {
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)
-  if (checkReviewRecovery) {
+  if (selectedProbes.includes('reconcile-receipt')) {
     const beforeReplayedReview = allModelRequests
+    const reviewTaskState = await rpc.workbench('task.get', { taskId: fresh.task.id })
     const replayedReview = await rpc.workbench('task.review.reconcile', reconcile, { status: [200, 400, 409] })
     expectReviewRecovery('Identical review reconciliation replays after restart', replayedReview, recovered)
     const alteredReview = await rpc.workbench('task.review.reconcile', { ...reconcile, reviewId: review.reviewId },
@@ -761,9 +799,14 @@ try {
     expectReviewRecovery('A reused reconcile request ID rejects another review ID and another revision',
       [alteredReview.code, alteredRevision.code], ['INVALID', 'INVALID'])
     expectReviewRecovery('Review receipt replay performs no model calls', allModelRequests, beforeReplayedReview)
-
+    expectReviewRecovery('Review receipt replay leaves task state unchanged',
+      await rpc.workbench('task.get', { taskId: fresh.task.id }), reviewTaskState)
+  }
+  if (selectedProbes.includes('cold-root')) {
     const coldTaskId = unrelated.task.id
     const coldRootId = unrelated.runs[0].rootSessionId
+    const coldRoot = await rpc('session/state', { sessionId: coldRootId })
+    assert.equal(coldRoot.active, false, 'the native root must be cold after restarting the Host')
     const beforeColdCalls = allModelRequests
     const beforeColdDetail = await rpc.workbench('task.get', { taskId: coldTaskId })
     const coldResults = []
@@ -782,16 +825,24 @@ try {
       { outcomes: ['INVALID_TRANSITION', 'INVALID_TRANSITION'], revision: beforeColdDetail.task.revision, reviews: 0, addedCalls: 0 })
     await rpc.workbench('task.prompt', { taskId: coldTaskId, requestId: 'activate-cold-root',
       expectedRevision: afterCold.task.revision, text: 'Owner activates the root before review' })
-    await until(async () => (await rpc('session/list', {})).items.some(item =>
-      item.sessionId === coldRootId && !item.running && !item.blank), 'owner activation of the cold root')
-    const restoredReview = await rpc.workbench('task.delegate', { taskId: coldTaskId, requestId: 'review-after-activation',
-      expectedRevision: afterCold.task.revision, instruction: 'Check the brief', material: 'Cold review fixture' },
-      { status: [200, 409] })
-    expectReviewRecovery('The owner can still delegate after activating the cold root',
-      restoredReview.status ?? restoredReview.code, 'completed')
-
+    await until(async () => {
+      const native = await rpc('session/state', { sessionId: coldRootId })
+      return native.active && !native.running && native.queue?.length === 0
+    }, 'owner activation of the cold root')
+    const restoredOutcomes = []
+    for (const requestId of ['review-after-activation-a', 'review-after-activation-b']) {
+      const current = await rpc.workbench('task.get', { taskId: coldTaskId })
+      const result = await rpc.workbench('task.delegate', { taskId: coldTaskId, requestId,
+        expectedRevision: current.task.revision, instruction: 'Check the brief', material: 'Cold review fixture' },
+        { status: [200, 409] })
+      restoredOutcomes.push(result.status ?? result.code)
+    }
+    expectReviewRecovery('The owner retains both review attempts after activating the cold root',
+      restoredOutcomes, ['completed', 'completed'])
+  }
+  if (selectedProbes.length) {
     if (reviewFailures.length) throw new AggregateError(reviewFailures, 'DEV-011 review recovery regressions')
-    console.log('PASS: cold-root admission, reconciliation replay, and independent forward request IDs.')
+    console.log(`PASS: DEV-011 review recovery probes (${selectedProbes.join(', ')}).`)
   }
   console.log('PASS: native authorization, task context, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
 } finally {
