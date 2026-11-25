@@ -60,6 +60,7 @@
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
 | `DEV-010` | Codex | `dev/DEV-010-workbench-context` | 基于 `41ad708` 接入只读资料索引、按需预览和阶段交接，保留原资料适配分支 |
 | `DEV-010` | Codex 协作 Agent | `dev/DEV-010-context-verification` | 从 `cf9066b` 独立核验既有原生上下文读取及工作区变化时的拒绝行为，覆盖 TST-011 |
+| `DEV-010` | Codex | `dev/DEV-010-native-message-preview-verification` | 基于 `d1e91f2` 验证公共预览读取真实原生用户、助手事件及任务归属，只改测试和对应文档 |
 | `DEV-010` | Codex 协作 Agent | `dev/DEV-010-handoff-merge-verification` | 从 `81b9635` 隔离候选的阶段交接呈现修正和 TST-011 浏览器红绿验证 |
 
 DEV-010 提交 `a82eab1`，应用入口生成带工作区与观测日期的授权来源索引、过期提示及最近阶段交接。按需加载重查来源授权和 revision。15 项测试与原生存储重开通过；正式 Host 来源适配器及界面入口待联调。
