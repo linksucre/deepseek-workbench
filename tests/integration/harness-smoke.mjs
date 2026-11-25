@@ -17,12 +17,21 @@ const workspace = await mkdtemp(join(tmpdir(), 'dsh-task-collaborator-'))
 const recoveryPatch = join(workspace, 'recovery.patch.yml')
 const recoveryPlugin = new URL('./fixtures/workspace-attach.mjs', import.meta.url).href
 const reservedId = `session-${randomUUID()}`
+const heldPrompt = 'Smoke: wait for native cancellation'
+const queuedPrompt = 'Smoke: preserve this queued followup'
 const requests = []
+let heldRequestStarted = false
+
+function containsPrompt(request, prompt) {
+  return JSON.stringify(request.messages?.at(-1) ?? null).includes(prompt)
+}
+
 const provider = createServer(async (request, response) => {
   try {
     const chunks = []
     for await (const chunk of request) chunks.push(chunk)
-    requests.push(JSON.parse(Buffer.concat(chunks).toString()))
+    const modelRequest = JSON.parse(Buffer.concat(chunks).toString())
+    requests.push(modelRequest)
     const events = [
       { type: 'message_start', message: { id: 'workbench-smoke', model: 'mock-model', usage: { input_tokens: 3, output_tokens: 0 } } },
       { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'mock response' } },
@@ -31,6 +40,11 @@ const provider = createServer(async (request, response) => {
       { type: 'message_stop' },
     ]
     response.writeHead(200, { 'content-type': 'text/event-stream' })
+    if (!heldRequestStarted && containsPrompt(modelRequest, heldPrompt)) {
+      heldRequestStarted = true
+      response.write(`data: ${JSON.stringify(events[0])}\n\n`)
+      return
+    }
     response.end(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''))
   } catch {
     response.writeHead(400).end()
@@ -144,6 +158,38 @@ try {
   assert.doesNotMatch(JSON.stringify(standard.modelRequest.system), /You are my task collaborator/)
   console.log('PASS: Web startup, collaborator preset, prompt injection, file/research/skill/present tools, and standard preset isolation.')
 
+  const held = await requestTurn({}, heldPrompt)
+  const sessionId = held.session.sessionId
+  const queued = {
+    sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: queuedPrompt }],
+  }
+  const queuedRequests = () => requests.filter(request => containsPrompt(request, queuedPrompt)).length
+  await rpc('session/prompt', queued)
+  const beforeCancel = await rpc('session/state', { sessionId })
+  assert.equal(beforeCancel.running, true)
+  assert.equal(beforeCancel.queue.length, 1)
+  const cancellation = await rpc('session/cancel', { sessionId })
+  assert.equal(cancellation.accepted, true)
+  const stopped = await rpc('session/wait', { sessionId, timeoutMs: 5_000 })
+  assert.equal(stopped.reason, 'idle')
+  assert.equal(stopped.state.running, false)
+  assert.equal(stopped.state.queue.length, 1, 'stopping preserves the queued followup')
+  assert.equal(queuedRequests(), 0, 'the parked followup has not reached the provider')
+
+  await rpc('session/prompt', queued)
+  const deduplicated = await rpc('session/state', { sessionId })
+  assert.equal(deduplicated.running, false, 'retrying a known prompt does not wake the Agent')
+  assert.equal(deduplicated.queue.length, 1)
+  await rpc('session/prompt', {
+    sessionId, requestId: randomUUID(), mode: 'queue',
+    content: [{ type: 'text', text: 'Smoke: wake the parked session' }],
+  })
+  const resumed = await rpc('session/wait', { sessionId, timeoutMs: 5_000 })
+  assert.equal(resumed.reason, 'idle')
+  assert.equal(resumed.state.queue.length, 0)
+  assert.equal(queuedRequests(), 1)
+  console.log('PASS: cancel is followed by a passive stop check; parked input survives until an explicit wake.')
+
   const { workspace: registered } = await rpc('workspace/create', { path: workspace })
   const failure = await rpc('session/create', {
     workspaceId: registered.workspaceId, sessionId: reservedId, agentPreset: 'task-collaborator',
@@ -159,6 +205,12 @@ try {
   assert.ok(!recovered.sessionIds.includes(reservedId), 'reserved session survived without membership')
   const { items } = await rpc('session/list', {})
   assert.ok(items.some(item => item.sessionId === reservedId), 'reserved session survives restart')
+
+  await rpc('session/prompt', queued)
+  const afterReplay = await rpc('session/state', { sessionId })
+  assert.equal(afterReplay.running, false)
+  assert.equal(afterReplay.queue.length, 0)
+  assert.equal(queuedRequests(), 1, 'native prompt replay is deduplicated after restart')
 
   const retry = await rpc('session/create', { workspaceId: recovered.workspaceId, sessionId: reservedId })
   assert.notEqual(retry.sessionId, reservedId, 'recreating an unattached named session mints a replacement')
