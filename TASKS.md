@@ -14,7 +14,7 @@
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | review | 任务界面及两条 M1 验收链路 |
 | DEV-009 | FR-008, NFR-006 | src/usage | DEV-006 | review | 用量归属、缺报、费用估算与对账 |
 | DEV-010 | FR-009 | src/application | DEV-006 | active | 索引及阶段交接 |
-| DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | planned | 有限委派与冲突隔离验证 |
+| DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | active | 有限委派与冲突隔离验证 |
 | DEV-012 | — | tests/integration | DEV-006 | review | M1 跨模块联调，先完成恢复、原生展示到提交、漂移退回及重交接受 |
 
 ## 当前领取
@@ -80,3 +80,5 @@ DEV-008 提交 `c8124f5`，工作台内接通已绑定会话的对话与发送�
 DEV-009 组合分支提交 `788822b`，从已提交的原生 reader 接到生产 owner 命令和工作台。22 项回归及门禁通过，真实 Host 复算、冷读、子会话取舍、完整计数估算、缺报、预算与独立 npm 归档的浏览器双链路通过。已部署到本地预览。生产费率由可选的本地 JSON 配置，未配置保留空金额。自动委派关联待 DEV-011。
 
 原生用量 Agent 的 `3e27f20` 已并入组合分支 `516d75a`。组合分支真实 Host 冒烟复验通过：重试和取消产生的已有结算与缺报在重启后仍可复算。DEV-009 进入 review。
+
+DEV-011 由 Codex 在 `dev/DEV-011-bounded-review` 开发，只负责有限委派的原生执行与隔离，DEV-010 保留原负责人和工作树。
