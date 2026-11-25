@@ -29,7 +29,8 @@
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
-| `DEV-009` | Codex | `dev/DEV-009-native-usage` | 用量模块与 TST-006，先做独立 Host 数据源核验 |
+| `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
+| `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 
 DEV-009 提交 `750522d`，真实 Host 用量探针验证提供方与模型归属、正常和失败结算、重启后无模型调用的读取，以及缺报与显式零的区别。DeepSeek Messages 在原生结算前将缺失的输入和输出计数填为零，此处需作为覆盖缺口。费用估算、任务绑定、去重及完整 TST-006 仍待实现。
 
