@@ -317,7 +317,7 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result.error))
     return result.value.items.map(item => item.sessionId)
   }
-  async function readWorkbench(operation, input) {
+  async function workbenchCommand(operation, input) {
     const endpoint = new URL('/workbench/v1/command', page.url())
     const response = await page.request.post(endpoint.href, {
       headers: { origin: endpoint.origin }, data: { operation, input },
@@ -549,14 +549,14 @@ try {
   assert.equal(await page.getByRole('checkbox', { name: 'JSON 格式有效' }).count(), 0)
   const checkedScope = await page.getByLabel('工作区', { exact: true }).inputValue()
   async function listedCheckedTasks() {
-    const { items, nextCursor } = await readWorkbench('task.list', { workspaceId: checkedScope, limit: 50, cursor: null })
+    const { items, nextCursor } = await workbenchCommand('task.list', { workspaceId: checkedScope, limit: 50, cursor: null })
     assert.equal(nextCursor, null)
     return items.filter(task => task.title === checkedTitle).map(task => task.id)
   }
   const checkedTasks = await listedCheckedTasks()
   assert.equal(checkedTasks.length, 1)
   const taskId = checkedTasks[0]
-  const beforeAcceptance = await readWorkbench('task.get', { taskId })
+  const beforeAcceptance = await workbenchCommand('task.get', { taskId })
   assert.equal(beforeAcceptance.task.status, 'review')
   const acceptanceAttempts = []
   async function loseFirstAcceptanceResponse(route) {
@@ -586,7 +586,7 @@ try {
     assert.deepEqual(acceptedTask.decisions.slice(0, -1), beforeAcceptance.decisions)
     assert.equal(acceptedTask.decisions.at(-1).submissionId, first.input.submissionId)
     assert.equal(acceptedTask.decisions.at(-1).verdict, 'accept')
-    assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
+    assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
     assert.equal(await manual.isChecked(), true)
 
     await activate(button('接受提交'))
@@ -594,7 +594,7 @@ try {
     assert.equal(acceptanceAttempts.length, 2)
     assert.deepEqual(acceptanceAttempts[1], first)
     assert.deepEqual(await listedCheckedTasks(), checkedTasks)
-    assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
+    assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
   } finally {
     await page.unroute(commandRoute, loseFirstAcceptanceResponse)
   }
@@ -603,7 +603,7 @@ try {
   await taskButton(checkedTitle).click()
   await waitTaskState('已验收')
   assert.deepEqual(await listedCheckedTasks(), checkedTasks)
-  assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
+  assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
   await currentEvidence.locator('summary').click()
   await page.locator('.submission-evidence').last().locator('summary').click()
   await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
@@ -689,10 +689,68 @@ try {
     await page.unroute(workspaceCommand, holdWorkspaceList)
   }
 
+  const beforePaginationRequests = modelRequests
+  const titles = Array.from({ length: 53 }, (_, index) => `browser pagination task ${String(index + 1).padStart(2, '0')}`)
+  const paginatedScope = await addWorkspace('pagination-workspace', titles[0])
+  for (const title of titles.slice(1)) {
+    await workbenchCommand('task.create', { requestId: randomUUID(), workspaceId: paginatedScope, title,
+      goal: 'Verify workspace task pagination', materials: [], deliverables: ['page.txt'],
+      criteria: [{ id: 'page', description: 'List this task once' }] })
+  }
+  const ledger = page.getByRole('navigation', { name: '任务列表' })
+  const more = button('加载更多')
+  const displayedTitles = () => ledger.getByRole('button').evaluateAll(rows => rows.map(row => row.firstChild.textContent))
+  async function taskPage(scope, navigate) {
+    const [response] = await Promise.all([
+      page.waitForResponse(response => {
+        const request = response.request()
+        if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v1/command')) return false
+        const { operation, input } = request.postDataJSON()
+        return operation === 'task.list' && input.workspaceId === scope
+      }),
+      navigate(),
+    ])
+    assert.equal(response.status(), 200)
+    await page.locator('body:not([aria-busy])').waitFor()
+    return { input: response.request().postDataJSON().input, result: (await response.json()).result }
+  }
+  const selectWorkspace = scope => taskPage(scope, () => workspaceSelect.selectOption(scope))
+  await selectWorkspace(latestScope)
+  const firstPage = await selectWorkspace(paginatedScope)
+  const firstTitles = firstPage.result.items.map(item => item.title)
+  assert.equal(firstPage.input.cursor, null)
+  assert.equal(firstTitles.length, 50)
+  assert.ok(firstPage.result.nextCursor)
+  assert.deepEqual(await displayedTitles(), firstTitles)
+  await more.waitFor()
+
+  const otherPage = await selectWorkspace(latestScope)
+  assert.equal(otherPage.input.cursor, null)
+  assert.deepEqual(await displayedTitles(), [latestTitle])
+  assert.equal(await more.isVisible(), false)
+  const reopenedPage = await selectWorkspace(paginatedScope)
+  assert.equal(reopenedPage.input.cursor, null)
+  assert.deepEqual(await displayedTitles(), firstTitles)
+  await more.waitFor()
+
+  await button('刷新任务').focus()
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await more.evaluate(element => element === document.activeElement), true)
+  const lastPage = await taskPage(paginatedScope, () => page.keyboard.press('Enter'))
+  assert.equal(lastPage.input.cursor, reopenedPage.result.nextCursor)
+  assert.equal(lastPage.result.items.length, 3)
+  assert.equal(lastPage.result.nextCursor, null)
+  const allDisplayed = await displayedTitles()
+  assert.deepEqual(allDisplayed, [...firstTitles, ...lastPage.result.items.map(item => item.title)])
+  assert.deepEqual([...allDisplayed].sort(), titles)
+  assert.equal(await more.isVisible(), false)
+  await page.getByRole('heading', { name: firstTitles[0], exact: true }).waitFor()
+  assert.equal(modelRequests, beforePaginationRequests)
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium workspace switching, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, lost acceptance response replay, and mobile layout.')
+  console.log('PASS: Chromium workspace switching, keyboard pagination, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, lost acceptance response replay, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
