@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { TaskError } from '../domain/task.mjs'
 import { openTaskRepository } from '../storage/task-repository.mjs'
+import { createHostReview } from './host-review.mjs'
+import { mountWorkbenchTools } from './host-tools.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
 
@@ -58,10 +60,19 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     storageDomain: ctx.storageDomain, z, defineDomain, domainTable, validateDetail: validator('TaskDetail'),
   })
   ctx.effect(() => () => repository.close())
+  const toolPrincipals = new WeakSet()
+  const grantAgent = principal => {
+    toolPrincipals.add(principal)
+    return principal
+  }
+  const isBoundCaller = (principal, workspaceId) => toolPrincipals.has(principal) &&
+    principal.workspaceId === workspaceId && ctx.workspaceRegistry.get(workspaceId)?.sessionIds.includes(principal.sessionId)
   const app = createTaskService({
-    repository, delivery,
-    authorize: ({ principal, workspaceId }) => principal === owner && ctx.workspaceRegistry.get(workspaceId) !== undefined,
+    repository, delivery: delivery ?? createHostReview(ctx, { owner, isBoundCaller }),
+    authorize: ({ principal, workspaceId }) => (principal === owner || isBoundCaller(principal, workspaceId)) &&
+      ctx.workspaceRegistry.get(workspaceId) !== undefined,
   })
+  mountWorkbenchTools(ctx, { repository, app, validate: validator, schemas: schema.$defs, grantAgent })
   const lifecycle = createHostStart({
     app, repository, sessionController: ctx.sessionController,
     sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
@@ -74,6 +85,9 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     'task.choose': input => app.choose(owner, input),
     'task.start': input => lifecycle.start(owner, input),
     'task.reconcile': input => lifecycle.reconcile(owner, input),
+    'task.submit': ({ selection, paths, ...input }) =>
+      app.submit(owner, { ...input, selection: { selection, ...(paths && { paths }) } }),
+    'task.decide': input => app.decide(owner, input),
   }
   const commands = new Map(Object.entries(methods).map(([id, run]) => {
     const { input, output, actor } = operations.get(id)

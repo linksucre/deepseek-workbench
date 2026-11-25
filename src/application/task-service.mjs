@@ -210,6 +210,10 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         return {
           kind: input.verdict, actorId: user(principal), submissionId: input.submissionId,
           reason: input.reason, observedVersions,
+          reviewEvidence: (input.confirmedCriteria ?? []).map(criterionId => ({
+            criterionId, kind: 'user', outcome: 'pass', source: null,
+            observedAt: now, summary: 'Reviewer explicitly confirmed this criterion',
+          })),
         }
       })
     },

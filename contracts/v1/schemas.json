@@ -373,6 +373,12 @@
               "type": "null"
             }
           ]
+        },
+        "reviewEvidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          }
         }
       },
       "required": [
@@ -1000,20 +1006,21 @@
           "minimum": 0,
           "maximum": 9007199254740991
         },
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
+        "selection": {
+          "enum": [
+            "latest-presentation",
+            "files"
+          ],
+          "type": "string"
         },
-        "evidenceRefs": {
+        "paths": {
           "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 8192
           }
         }
       },
@@ -1021,8 +1028,33 @@
         "taskId",
         "requestId",
         "expectedRevision",
-        "artifactIds",
-        "evidenceRefs"
+        "selection"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selection": {
+                "const": "files"
+              }
+            },
+            "required": [
+              "selection"
+            ]
+          },
+          "then": {
+            "required": [
+              "paths"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "paths"
+              ]
+            }
+          }
+        }
       ]
     },
     "DecideTask": {
@@ -1064,6 +1096,17 @@
               "type": "null"
             }
           ]
+        },
+        "confirmedCriteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
         }
       },
       "required": [
@@ -1126,26 +1169,52 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "artifactIds": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          }
+        "selection": {
+          "enum": [
+            "latest-presentation",
+            "files"
+          ],
+          "type": "string"
         },
-        "evidenceRefs": {
+        "paths": {
           "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
           "items": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 256
+            "maxLength": 8192
           }
         }
       },
       "required": [
-        "artifactIds",
-        "evidenceRefs"
+        "selection"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "selection": {
+                "const": "files"
+              }
+            },
+            "required": [
+              "selection"
+            ]
+          },
+          "then": {
+            "required": [
+              "paths"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "paths"
+              ]
+            }
+          }
+        }
       ]
     },
     "AgentAck": {

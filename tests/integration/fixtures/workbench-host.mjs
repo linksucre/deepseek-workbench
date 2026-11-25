@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import Ajv2020 from 'ajv/dist/2020.js'
 import { mountWorkbenchHost } from '../../../src/application/host-runtime.mjs'
 
-export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery']
+export const inject = ['storageDomain', 'webServer', 'workspaceRegistry', 'sessionController', 'sessionQuery', 'tools']
 
 export async function apply(ctx) {
   const checkout = process.env.WORKBENCH_TEST_CHECKOUT

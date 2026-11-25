@@ -13,3 +13,5 @@
 执行方式可以在 draft、ready、active 或 paused 更新，由受信调用者指定来源；用户已选定时，Agent 建议不得覆盖。历史记录由应用及持久化模块保存。
 
 待核对状态允许记录宿主启动回执并增加 revision，状态保持 blocked。工作区、会话和回执的归属由应用服务及宿主适配核验。
+
+用户可以在接受时逐项确认 Submission 的验收条件。确认随 Decision append，原 Submission 不被改写。确认不抵消可信的失败记录。

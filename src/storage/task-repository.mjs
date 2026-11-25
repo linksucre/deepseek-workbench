@@ -85,6 +85,20 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
       return structuredClone(current(key))
     },
 
+    findActiveBySession(sessionId) {
+      let found
+      for (const key of table.keys()) {
+        const candidate = table.get(key)
+        const task = candidate.detail.task
+        if (!['active', 'review'].includes(task.status) ||
+            !candidate.detail.runs.some(run =>
+              run.id === task.activeRunId && run.endedAt === null && run.rootSessionId === sessionId)) continue
+        if (found !== undefined) return undefined
+        found = checked(key, candidate)
+      }
+      return structuredClone(found)
+    },
+
     create(detail, request) {
       const input = structuredClone({ detail, request })
       return serialize(async () => {

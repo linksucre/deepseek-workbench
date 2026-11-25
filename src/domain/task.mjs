@@ -104,21 +104,26 @@ function decide(detail, command, now) {
   invalid(submission !== undefined && submission.id === command.submissionId, 'Decision must target the current submission')
   invalid(nonblank(command.actorId), 'A verified reviewer identity is required')
   if (command.kind === 'return') {
-    invalid(nonblank(command.reason), 'A return reason is required')
+    invalid(nonblank(command.reason) && !command.reviewEvidence?.length, 'A return needs a reason and cannot confirm criteria')
     task.status = 'active'
     task.currentSubmissionId = null
   } else {
-    verifyAcceptance(submission, artifacts, command.observedVersions)
+    const reviewEvidence = command.reviewEvidence ?? []
+    const criteria = new Set(submission.criteriaSnapshot.map(item => item.id))
+    invalid(reviewEvidence.every(item => item.kind === 'user' && item.outcome === 'pass' && criteria.has(item.criterionId)),
+      'Review confirmations must refer to a submission criterion')
+    verifyAcceptance(submission, artifacts, command.observedVersions, reviewEvidence)
     task.status = 'accepted'
     closeRun(detail, now)
   }
   decisions.push({
     submissionId: submission.id, verdict: command.kind === 'return' ? 'return' : 'accept',
     actorId: command.actorId, reason: command.reason ?? null, decidedAt: now,
+    ...(command.reviewEvidence?.length && { reviewEvidence: structuredClone(command.reviewEvidence) }),
   })
 }
 
-function verifyAcceptance(submission, artifacts, versions) {
+function verifyAcceptance(submission, artifacts, versions, reviewEvidence) {
   const observed = new Map(versions.map(item => [item.artifactId, item]))
   invalid(observed.size === versions.length, 'Conflicting version observations')
   for (const id of submission.artifactIds) {
@@ -129,7 +134,7 @@ function verifyAcceptance(submission, artifacts, versions) {
     'ARTIFACT_DRIFT', 'A submitted artifact is missing, unverifiable, or changed')
   }
   for (const criterion of submission.criteriaSnapshot) {
-    const trusted = submission.evidence.filter(item =>
+    const trusted = [...submission.evidence, ...reviewEvidence].filter(item =>
       item.criterionId === criterion.id && (item.kind === 'user' || (item.kind === 'machine' && item.source !== null)))
     invalid(trusted.some(item => item.outcome === 'pass') && !trusted.some(item => item.outcome === 'fail'),
       'Each criterion requires passing evidence without a conflicting trusted failure')
