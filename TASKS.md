@@ -28,3 +28,5 @@
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 
 DEV-005 提交 `d139fe0`，原生 JSON 后端已验证启动意图持久化、revision 竞争、幂等重放、关闭重开与备份恢复。工作台 Host 集成和迁移仍待验证。DEV-004 可通过 `src/storage/task-repository.mjs` 的 commit 在单键更新中保存或清除 pendingIntent；跨模块接口由 DEV-006 接入。
+
+DEV-004 提交 `b3e759e`，真实 Web Host 的测试插件在原生挂载入口注入故障，确认错误返回原会话与工作区 ID，原会话重启后仍可读取。方案待评审的是如何持久化并核验受信 Host 回执。工作台恢复实现等待 DEV-003 合并及方案确认。
