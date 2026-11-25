@@ -27,6 +27,7 @@
 | `DEV-002` | Codex | `dev/DEV-002-worktree-gate` | 基于 `609c98c` 固化 worktree CI 门禁 `c9b8af6` 并独立复验 `28c773e` |
 | `DEV-002` | Codex | `dev/DEV-002-candidate-verification` | 组合 DEV-008 交互、DEV-010 与 DEV-011 回归和原生 worktree 门禁，复跑候选并记录发布依赖 |
 | `DEV-002` | Codex 协作 Agent | `dev/DEV-002-m3-combined-verification` | 基于 `9379bdf` 组合候选现有资料修补、储存、审阅边界和浏览器恢复测试，验证独立归档 |
+| `DEV-002` | Codex 协作 Agent | `dev/DEV-002-m3-context-combined` | 从 `223596b` 组合原协作者的 `f839868` 资料保真提交，复验原生消息和跨模块场景 |
 | `DEV-002` | Codex | `dev/DEV-002-release-review` | 基于 `97af999` 汇集待评审设计、Harness 上游差异和发布验收入口，只改评审文档 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
