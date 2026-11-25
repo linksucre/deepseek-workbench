@@ -59,7 +59,7 @@ async function stop() {
   child = undefined
 }
 
-async function start(bindings) {
+async function start(bindings, { modelEnabled = true } = {}) {
   child = spawn(process.execPath, [
     '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
     '--no-open', '--host', '127.0.0.1', '--port', '0',
@@ -68,7 +68,8 @@ async function start(bindings) {
     env: {
       ...process.env,
       DSH_HOME: join(data, 'dsh'), DSH_AGENTS_HOME: join(data, 'agents'),
-      DEEPSEEK_API_KEY: 'mock-usage-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      DEEPSEEK_API_KEY: modelEnabled ? 'mock-usage-key' : '',
+      DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
       WORKBENCH_USAGE_TEST_BINDINGS: bindings === undefined ? '' : JSON.stringify(bindings),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -179,7 +180,7 @@ try {
   await stop()
   const callsBeforeColdReads = modelCalls
   await rm(output)
-  await start(bindings)
+  await start(bindings, { modelEnabled: false })
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')).usage, usage)
   assert.equal(modelCalls, callsBeforeColdReads, 'reading restored usage makes no model calls')
   console.log('PASS: native usage shows totals, history route and available cache fields across restart; input/output omissions are indistinguishable from zero.')
