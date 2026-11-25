@@ -16,6 +16,12 @@ const legacyCheckoutFlag = '--review-profile-upgrade-from='
 const legacyCheckoutOption = process.argv.slice(3).find(arg => arg.startsWith(legacyCheckoutFlag))
 const legacyCheckout = legacyCheckoutOption?.slice(legacyCheckoutFlag.length)
 if (legacyCheckoutOption) assert.ok(legacyCheckout, 'Supply an installed legacy Workbench checkout')
+const legacyHarnessFlag = '--review-legacy-harness='
+const legacyHarnessOption = process.argv.slice(3).find(arg => arg.startsWith(legacyHarnessFlag))
+const legacyHarnessPath = legacyHarnessOption?.slice(legacyHarnessFlag.length)
+if (legacyHarnessOption) assert.ok(legacyHarnessPath && legacyCheckout,
+  'A legacy Harness path requires an installed legacy Workbench checkout')
+const legacyHarness = legacyHarnessPath ? resolve(legacyHarnessPath) : checkout
 const reviewProbes = ['cold-root', 'reconcile-receipt', 'forward-scope']
 const forwardRefusalProbe = 'forward-pre-admission'
 const unknownForwardProbe = 'forward-no-admission-proof'
@@ -168,13 +174,13 @@ async function until(read, description, timeout = 25_000) {
   throw new Error(`Unable to verify ${description} (Host: ${exit})\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
 }
 
-async function start(probe = {}, { workbench = true, dataHome = data, overlay = patch } = {}) {
+async function start(probe = {}, { workbench = true, dataHome = data, overlay = patch, hostCheckout = checkout } = {}) {
   output = ''
   child = spawn(process.execPath, [
     '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', ...(workbench ? ['--patch', overlay] : []),
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
-    cwd: checkout,
+    cwd: hostCheckout,
     env: {
       ...process.env, DSH_HOME: dataHome, DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
@@ -284,6 +290,8 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   await stop()
   const backup = join(root, 'legacy-profile-backup')
   await cp(data, backup, { recursive: true })
+  const backupRecord = join(backup, 'storages', 'workbench_tasks', 'tasks', `${taskId}.json`)
+  const backupBytes = await readFile(backupRecord)
   rpc = await start()
   assert.deepEqual(await snapshot(), before)
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
@@ -305,13 +313,14 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
 
   const restored = join(root, 'legacy-profile-restored')
   await cp(backup, restored, { recursive: true })
-  rpc = await start({}, { dataHome: restored, overlay: legacyPatch })
+  rpc = await start({}, { dataHome: restored, overlay: legacyPatch, hostCheckout: legacyHarness })
   assert.deepEqual(await snapshot(), before)
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
   assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
   assert.deepEqual(await snapshot(), before)
   assert.equal(allModelRequests, afterWriteRequests)
   await stop()
+  assert.deepEqual(await readFile(backupRecord), backupBytes)
 
   rpc = await start()
   assert.deepEqual(await snapshot(), upgraded)
@@ -342,9 +351,10 @@ hostSmoke: try {
   let legacyPatch
   if (legacyCheckout) {
     legacyPatch = join(root, 'legacy.patch.yml')
-    execFileSync(process.execPath, [resolve(legacyCheckout, 'scripts/source-overlay.mjs'), checkout, legacyPatch, usagePolicy])
+    execFileSync(process.execPath, [resolve(legacyCheckout, 'scripts/source-overlay.mjs'), legacyHarness, legacyPatch, usagePolicy])
   }
-  let rpc = legacyPatch ? await start({}, { overlay: legacyPatch }) : await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
+  let rpc = legacyPatch ? await start({}, { overlay: legacyPatch, hostCheckout: legacyHarness })
+    : await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
   const page = await rpc.page('/workbench')
   assert.equal(page.status, 200)
   assert.match(page.headers.get('content-security-policy'), /script-src 'self'/)
