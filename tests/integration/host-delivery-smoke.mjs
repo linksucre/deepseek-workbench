@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const checkout = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url)))
@@ -93,7 +94,6 @@ async function start(probe = {}) {
     env: {
       ...process.env, DSH_HOME: join(root, 'dsh'), DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
-      WORKBENCH_TEST_CHECKOUT: checkout,
       ...probe,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -117,6 +117,7 @@ async function start(probe = {}) {
     assert.equal(envelope.ok, true, JSON.stringify(envelope.error))
     return envelope.value
   }
+  rpc.page = path => fetch(`${origin}${path}`, { headers: { cookie } })
   rpc.workbench = async (operation, input, options = {}) => {
     const headers = { 'content-type': 'application/json', origin: options.origin ?? origin }
     if (!options.anonymous) headers.cookie = cookie
@@ -144,14 +145,22 @@ async function stop() {
 
 const hash = text => createHash('sha256').update(text).digest('hex')
 try {
-  const preset = await readFile(new URL('../../src/preset/cordis.patch.yml', import.meta.url), 'utf8')
+  execFileSync(process.execPath, [
+    fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), checkout, patch,
+  ])
   const module = new URL('./fixtures/delivery-probe.mjs', import.meta.url).href
   const entry = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
-  await writeFile(patch, `${preset}\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`)
+  await writeFile(patch, `\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`, { flag: 'a' })
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
   let rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
+  const page = await rpc.page('/workbench')
+  assert.equal(page.status, 200)
+  assert.match(page.headers.get('content-security-policy'), /script-src 'self'/)
+  assert.match(await page.text(), /新建任务/)
+  assert.equal((await rpc.page('/workbench/ui.mjs')).status, 200)
   const { workspace } = await rpc('workspace/create', { path: root })
+  assert.ok((await (await rpc.page('/workbench/v1/workspaces')).json()).some(item => item.id === workspace.workspaceId))
   const brief = {
     requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
     goal: 'Verify task persistence', criteria: [{ id: 'facts', description: 'Check sources' }],
@@ -301,6 +310,13 @@ try {
   }, { status: 409 })
   assert.equal((await rpc('session/list', {})).items.length, 3)
   assert.ok(!(await rpc('workspace/create', { path: root })).workspace.sessionIds.includes(unknownId))
+  const listQuery = { workspaceId: workspace.workspaceId, limit: 1, cursor: null }
+  const firstPage = await rpc.workbench('task.list', listQuery)
+  assert.equal(firstPage.items.length, 1)
+  assert.ok(firstPage.nextCursor)
+  const nextPage = await rpc.workbench('task.list', { ...listQuery, cursor: firstPage.nextCursor })
+  assert.notEqual(firstPage.items[0].id, nextPage.items[0].id)
+  assert.equal((await rpc.workbench('task.list', { ...listQuery, cursor: 'bad' }, { status: 400 })).code, 'INVALID')
   const loose = await rpc('session/create', { workspaceId: workspace.workspaceId, agentPreset: 'task-collaborator' })
   await rpc('session/prompt', { sessionId: loose.sessionId, requestId: randomUUID(), mode: 'queue',
     content: [{ type: 'text', text: unboundMarker }] })

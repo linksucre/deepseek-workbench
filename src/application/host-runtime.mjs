@@ -80,6 +80,7 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
   const methods = {
     'task.create': input => app.create(owner, input),
     'task.get': input => app.get(owner, input.taskId),
+    'task.list': input => app.list(owner, input),
     'task.updateBrief': input => app.updateBrief(owner, input),
     'task.ready': input => app.ready(owner, input),
     'task.choose': input => app.choose(owner, input),

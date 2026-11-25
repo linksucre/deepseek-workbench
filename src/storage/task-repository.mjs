@@ -85,6 +85,15 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
       return structuredClone(current(key))
     },
 
+    listTasks(workspaceId) {
+      const tasks = []
+      for (const key of table.keys()) {
+        const task = table.get(key).detail.task
+        if (task.workspaceId === workspaceId) tasks.push(task)
+      }
+      return structuredClone(tasks)
+    },
+
     findActiveBySession(sessionId) {
       let found
       for (const key of table.keys()) {

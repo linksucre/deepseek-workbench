@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>DeepSeek 工作台</title>
+  <link rel="stylesheet" href="/workbench/ui.css">
+  <script type="module" src="/workbench/ui.mjs"></script>
+</head>
+<body>
+  <header class="masthead">
+    <strong class="wordmark">工作台</strong>
+    <a href="/" target="_blank" rel="noopener">打开 Harness</a>
+  </header>
+  <div class="shell">
+    <aside class="ledger" aria-label="任务">
+      <div class="ledger-head">
+        <label for="workspace">工作区</label>
+        <div class="workspace-line"><select id="workspace"></select><button id="register" type="button" aria-label="添加工作区">＋</button></div>
+        <button id="new" class="primary" type="button">新建任务</button>
+      </div>
+      <nav id="tasks" aria-label="任务列表"></nav>
+      <button id="more" type="button" hidden>加载更多</button>
+    </aside>
+    <main id="main" aria-labelledby="title">
+      <p id="feedback" role="status" aria-live="polite" hidden></p>
+      <article id="detail">
+        <h1 id="title">正在读取工作区</h1>
+      </article>
+    </main>
+  </div>
+
+  <dialog id="task-dialog">
+    <form id="task-form">
+      <h2 id="form-title">新建任务</h2>
+      <label id="template-field">模板
+        <select id="template">
+          <option value="development">代码开发</option>
+          <option value="design">设计</option>
+          <option value="writing">创作</option>
+          <option value="documents">调研与材料</option>
+        </select>
+      </label>
+      <label>标题<input name="title" required maxlength="256"></label>
+      <label>目标<textarea name="goal" required rows="3" maxlength="8192"></textarea></label>
+      <label>交付物 <span class="hint">每行一项</span><textarea name="deliverables" required rows="2" maxlength="8192"></textarea></label>
+      <label>验收条件 <span class="hint">每行一项</span><textarea name="criteria" required rows="3" maxlength="8192"></textarea></label>
+      <p class="form-error" role="alert"></p>
+      <div class="actions"><button type="button" data-close>取消</button><button class="primary" type="submit">保存任务</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="workdir-dialog">
+    <form id="workdir-form">
+      <h2>添加工作区</h2>
+      <label>本机目录的绝对路径<input name="path" required spellcheck="false"></label>
+      <p class="form-error" role="alert"></p>
+      <div class="actions"><button type="button" data-close>取消</button><button class="primary" type="submit">添加</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

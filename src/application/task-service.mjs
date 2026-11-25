@@ -116,6 +116,33 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       return detail
     },
 
+    async list(principal, { workspaceId, limit, cursor }) {
+      user(principal)
+      if (!await authorize({ principal, workspaceId, operation: 'task.list' })) reject('NOT_FOUND', 'Workspace not found')
+      const compare = (left, right) => right.updatedAt.localeCompare(left.updatedAt) || left.id.localeCompare(right.id)
+      let bound
+      if (cursor !== null) {
+        try {
+          bound = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+          if (bound.workspaceId !== workspaceId || typeof bound.updatedAt !== 'string' || typeof bound.id !== 'string') {
+            throw new Error('Invalid boundary')
+          }
+        } catch {
+          reject('INVALID', 'Invalid cursor for this workspace')
+        }
+      }
+      const tasks = repository.listTasks(workspaceId).sort(compare)
+      const filtered = bound ? tasks.filter(task => compare(task, bound) > 0) : tasks
+      const items = filtered.slice(0, limit)
+      const last = items.at(-1)
+      return {
+        items,
+        nextCursor: filtered.length > items.length
+          ? Buffer.from(JSON.stringify({ workspaceId, id: last.id, updatedAt: last.updatedAt })).toString('base64url')
+          : null,
+      }
+    },
+
     updateBrief(principal, input) {
       return mutate(principal, 'task.updateBrief', input, () => ({ kind: 'update-brief', brief: input }))
     },

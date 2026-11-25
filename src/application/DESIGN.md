@@ -21,3 +21,5 @@ reserveStart 只持久化意图，将任务置为待核对。原生创建由会�
 [host-tools.mjs](host-tools.mjs) 将 suggest 和 submit 仅暴露给活动或等待验收的唯一绑定根会话，工具执行时再次查绑定。原生工具协议使用公共契约可显示的 Schema 子集，执行前后仍使用完整 v1 契约校验。工具在会话身份下提交，并使用原生 callId 去重。无任务绑定的会话看不到这两个工具。
 
 [host-review.mjs](host-review.mjs) 从阶段和上一提交的游标确定原生展示范围，在经过 Host 鉴权的入口核验同一工作区的文件。当前可由 owner 显式确认条件；自动测试结果到验收条件的映射仍待接入。验收前再次读取旧提交所指版本。
+
+[entry.mjs](entry.mjs) 由源码 overlay 挂载原生存储、验证器、认证任务接口和 UI。[source-overlay.mjs](../../scripts/source-overlay.mjs) 验证固定上游提交与构建模块存在后，生成只引用本机受控源码的配置。task.list 只读当前工作区；游标绑定该工作区的排序边界，按更新时间和任务 ID 分页。

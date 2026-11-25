@@ -1,0 +1,371 @@
+const $ = id => document.getElementById(id)
+const workspace = $('workspace')
+const taskForm = $('task-form')
+const taskDialog = $('task-dialog')
+const workdirDialog = $('workdir-dialog')
+const detail = $('detail')
+const tasks = new Map()
+const retries = new Map()
+let cursor = null
+let selected = null
+let editing = null
+let busy = false
+let selectionVersion = 0
+
+const statusLabel = {
+  draft: '草稿', ready: '就绪', active: '执行中', review: '待验收',
+  accepted: '已验收', paused: '已暂停', blocked: '待核对', cancelled: '已取消',
+}
+const templateText = {
+  development: ['修改后的代码\n验证结果', '实现预期行为\n运行相关测试'],
+  design: ['可预览设计\n关键状态说明', '覆盖主要使用场景\n检查响应式与关键状态'],
+  writing: ['可编辑正文', '符合目标受众与语气\n核查关键事实'],
+  documents: ['可编辑材料\n来源清单', '核对关键事实和数据\n标注来源及缺失信息'],
+}
+const methods = {
+  direct: '直接执行', 'direction-review': '先审方向', 'verify-first': '先查证', reuse: '复用已有流程',
+}
+
+function node(tag, text, className) {
+  const item = document.createElement(tag)
+  if (text !== undefined) item.textContent = text
+  if (className) item.className = className
+  return item
+}
+
+function button(label, action, className) {
+  const control = node('button', label, className)
+  control.type = 'button'
+  control.addEventListener('click', action)
+  return control
+}
+
+async function request(path, options = {}) {
+  const response = await fetch(path, { credentials: 'same-origin', ...options })
+  const json = response.headers.get('content-type')?.includes('application/json')
+  const data = json ? await response.json() : null
+  if (!response.ok) {
+    const message = response.status === 401 ? '请先在 Harness 登录，再刷新工作台。'
+      : response.status === 403 ? '需要从当前 Harness 登录地址打开工作台。'
+      : data?.error?.message ?? `请求失败（${response.status}）`
+    throw Object.assign(new Error(message), { code: data?.error?.code })
+  }
+  return data
+}
+const post = (path, body) => request(path, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+})
+const command = async (operation, input) => (await post('/workbench/v1/command', { operation, input })).result
+
+async function mutate(operation, input) {
+  const key = JSON.stringify([operation, input])
+  if (!retries.has(key)) retries.set(key, crypto.randomUUID())
+  const result = await command(operation, { ...input, requestId: retries.get(key) })
+  retries.delete(key)
+  return result
+}
+
+function feedback(message, error = false) {
+  const element = $('feedback')
+  element.textContent = message
+  element.hidden = !message
+  element.toggleAttribute('data-error', error)
+}
+
+async function perform(action, errorSink = message => feedback(message, true)) {
+  if (busy) return
+  busy = true
+  document.body.setAttribute('aria-busy', 'true')
+  try {
+    await action()
+  } catch (error) {
+    errorSink(error.message)
+    if (error.code === 'REVISION_CONFLICT' && selected) {
+      try { await loadTask(selected.task.id) } catch { /* preserve the original error */ }
+    }
+  } finally {
+    busy = false
+    document.body.removeAttribute('aria-busy')
+  }
+}
+
+async function loadWorkspaces(preferred) {
+  const spaces = await request('/workbench/v1/workspaces')
+  workspace.replaceChildren(...spaces.map(space => {
+    const option = node('option', space.title)
+    option.value = space.id
+    option.title = space.path
+    return option
+  }))
+  if (spaces.some(space => space.id === preferred)) workspace.value = preferred
+  $('new').disabled = spaces.length === 0
+  if (spaces.length === 0) {
+    detail.replaceChildren(mainTitle('添加工作区'), node('p', '选择一个本机目录，任务和代理会话会归到该工作区。'),
+      button('添加工作区', () => workdirDialog.showModal(), 'primary'))
+    return
+  }
+  await loadList()
+}
+
+function renderList() {
+  const elements = [...tasks.values()].map(task => {
+    const item = button(task.title, () => perform(() => loadTask(task.id)))
+    item.append(node('span', statusLabel[task.status], 'subtle'))
+    if (selected?.task.id === task.id) item.setAttribute('aria-current', 'true')
+    return item
+  })
+  $('tasks').replaceChildren(...elements)
+  $('more').hidden = !cursor
+}
+
+async function loadList({ selectFirst = true, append = false } = {}) {
+  const scope = workspace.value
+  const page = await command('task.list', { workspaceId: scope, limit: 50, cursor: append ? cursor : null })
+  if (scope !== workspace.value) return
+  if (!append) tasks.clear()
+  for (const task of page.items) tasks.set(task.id, task)
+  cursor = page.nextCursor
+  if (selectFirst) {
+    const first = tasks.keys().next().value
+    if (first) return loadTask(first)
+    selected = null
+    detail.replaceChildren(mainTitle('还没有任务'), node('p', '从一个明确的交付目标开始。'),
+      button('新建任务', () => openTaskForm(), 'primary'))
+  }
+  renderList()
+}
+
+async function loadTask(id) {
+  const version = ++selectionVersion
+  const value = await command('task.get', { taskId: id })
+  if (version !== selectionVersion || value.task.workspaceId !== workspace.value) return
+  selected = value
+  renderDetail()
+  renderList()
+}
+
+function mainTitle(text) {
+  const heading = node('h1', text)
+  heading.id = 'title'
+  return heading
+}
+
+function section(title, ...content) {
+  const area = node('section', undefined, 'section')
+  area.append(node('h2', title), ...content)
+  return area
+}
+
+function list(values) {
+  const items = node('ul')
+  items.append(...values.map(value => node('li', value)))
+  return items
+}
+
+function taskAction(operation, payload = {}) {
+  return perform(async () => {
+    const task = selected.task
+    selected = await mutate(operation, { taskId: task.id, expectedRevision: task.revision, ...payload })
+    feedback('已更新任务')
+    renderDetail()
+    await loadList({ selectFirst: false })
+  })
+}
+
+function renderDetail() {
+  const { task, runs, artifacts, submissions, decisions } = selected
+  const head = node('div', undefined, 'detail-head')
+  head.append(mainTitle(task.title), node('span', statusLabel[task.status], 'state'))
+  const brief = node('div', undefined, 'split')
+  const deliverables = node('div')
+  deliverables.append(node('strong', '交付物'), list(task.deliverables))
+  const criteria = node('div')
+  criteria.append(node('strong', '验收条件'), list(task.criteria.map(item => item.description)))
+  brief.append(deliverables, criteria)
+  const actions = node('div', undefined, 'actions')
+  actions.append(button('刷新任务', () => perform(() => loadTask(task.id))))
+  if (['draft', 'ready'].includes(task.status)) actions.append(button('编辑任务', () => openTaskForm(task)))
+  if (task.status === 'draft') actions.append(button('标为就绪', () => taskAction('task.ready'), 'primary'))
+  if (task.status === 'ready') actions.append(button('启动 Agent 会话', () => taskAction('task.start'), 'primary'))
+  if (task.status === 'active') actions.append(button('提交最新展示', () => taskAction('task.submit', { selection: 'latest-presentation' })))
+  detail.replaceChildren(head, node('p', task.goal, 'goal'), actions, section('任务要求', brief))
+  if (task.choice) {
+    detail.append(section('执行方式', node('p', task.choice.methods.map(key => methods[key] ?? key).join('、')),
+      node('p', task.choice.reason), node('span', task.choice.source === 'user' ? '用户选定' : 'Agent 建议', 'subtle')))
+  }
+  if (['draft', 'ready', 'active', 'paused'].includes(task.status)) detail.append(choiceEditor(task))
+  const run = runs.find(item => item.id === task.activeRunId) ?? runs.at(-1)
+  if (run?.rootSessionId) {
+    const link = node('a', '返回 Harness')
+    link.href = '/'
+    link.target = '_blank'
+    link.rel = 'noopener'
+    const copy = button('复制会话 ID', () => perform(async () => {
+      await navigator.clipboard.writeText(run.rootSessionId)
+      feedback('已复制会话 ID')
+    }))
+    detail.append(section('执行会话', node('code', run.rootSessionId), copy, document.createTextNode(' '), link))
+  }
+  if (task.status === 'blocked') detail.append(recoveryEditor())
+  for (const submission of [...submissions].reverse()) {
+    const current = submission.id === task.currentSubmissionId
+    const area = section(current ? '当前提交' : '历史提交')
+    const files = artifacts.filter(item => submission.artifactIds.includes(item.id))
+    for (const file of files) {
+      const row = node('div', undefined, 'file-row')
+      row.append(node('strong', file.locator.split(/[\\/]/).at(-1)), node('span', file.locator, 'path'),
+        node('code', `${file.versionKind} ${file.version ?? ''}`))
+      area.append(row)
+    }
+    const decision = decisions.find(item => item.submissionId === submission.id)
+    if (decision) area.append(node('p', decision.verdict === 'accept' ? '已验收' : `退回原因：${decision.reason}`))
+    if (current && task.status === 'review') area.append(reviewEditor(submission))
+    detail.append(area)
+  }
+}
+
+function choiceEditor(task) {
+  const form = node('form', undefined, 'actions')
+  const select = node('select')
+  select.setAttribute('aria-label', '执行方式')
+  for (const [value, label] of Object.entries(methods)) {
+    const option = node('option', label)
+    option.value = value
+    select.append(option)
+  }
+  if (task.choice?.methods.length) select.value = task.choice.methods[0]
+  const reason = node('input')
+  reason.setAttribute('aria-label', '改选理由')
+  reason.placeholder = '改选理由'
+  reason.required = true
+  const save = node('button', '保存执行方式')
+  form.append(select, reason, save)
+  form.addEventListener('submit', event => {
+    event.preventDefault()
+    void taskAction('task.choose', { choice: {
+      domain: task.choice?.domain ?? 'documents', methods: [select.value], source: 'user',
+      reason: reason.value.trim(), skillIds: task.choice?.skillIds ?? [],
+    } })
+  })
+  return section('选择做法', form)
+}
+
+function recoveryEditor() {
+  const form = node('form', undefined, 'actions')
+  const id = node('input')
+  id.setAttribute('aria-label', '要核对的会话 ID')
+  id.placeholder = '原会话 ID'
+  id.required = true
+  form.append(id, node('button', '核对并挂载'), button('结束启动意图', () =>
+    taskAction('task.reconcile', { action: 'discard-intent', rootSessionId: null })))
+  form.addEventListener('submit', event => {
+    event.preventDefault()
+    void taskAction('task.reconcile', { action: 'attach', rootSessionId: id.value.trim() })
+  })
+  return section('会话待核对', node('p', '核对已创建的会话，或结束本次启动意图。'), form)
+}
+
+function reviewEditor(submission) {
+  const area = node('div')
+  const fieldset = node('fieldset')
+  fieldset.append(node('legend', '逐项确认'))
+  const checks = submission.criteriaSnapshot.map(item => {
+    const label = node('label', item.description)
+    const check = node('input')
+    check.type = 'checkbox'
+    check.value = item.id
+    label.prepend(check)
+    fieldset.append(label)
+    return check
+  })
+  const approve = button('接受提交', () => taskAction('task.decide', {
+    submissionId: submission.id, verdict: 'accept', reason: null,
+    confirmedCriteria: checks.filter(input => input.checked).map(input => input.value),
+  }), 'primary')
+  approve.disabled = true
+  for (const check of checks) check.addEventListener('change', () => {
+    approve.disabled = checks.some(input => !input.checked)
+  })
+  const form = node('form', undefined, 'actions')
+  const reason = node('input')
+  reason.setAttribute('aria-label', '退回理由')
+  reason.placeholder = '退回理由'
+  reason.required = true
+  form.append(approve, reason, node('button', '退回修改'))
+  area.append(fieldset, form)
+  form.addEventListener('submit', event => {
+    event.preventDefault()
+    void taskAction('task.decide', { submissionId: submission.id, verdict: 'return', reason: reason.value.trim() })
+  })
+  return area
+}
+
+function fillTemplate() {
+  const [deliverables, criteria] = templateText[$('template').value]
+  taskForm.elements.deliverables.value = deliverables
+  taskForm.elements.criteria.value = criteria
+}
+
+function openTaskForm(task) {
+  editing = task ?? null
+  taskForm.reset()
+  taskForm.querySelector('.form-error').textContent = ''
+  $('form-title').textContent = task ? '编辑任务' : '新建任务'
+  $('template-field').hidden = Boolean(task)
+  if (task) {
+    taskForm.elements.title.value = task.title
+    taskForm.elements.goal.value = task.goal
+    taskForm.elements.deliverables.value = task.deliverables.join('\n')
+    taskForm.elements.criteria.value = task.criteria.map(item => item.description).join('\n')
+  } else {
+    fillTemplate()
+  }
+  taskDialog.showModal()
+}
+const lines = value => value.split('\n').map(item => item.trim()).filter(Boolean)
+taskForm.addEventListener('submit', event => {
+  event.preventDefault()
+  const values = new FormData(taskForm)
+  const fields = {
+    title: values.get('title').trim(), goal: values.get('goal').trim(), materials: editing?.materials ?? [],
+    deliverables: lines(values.get('deliverables')),
+    criteria: lines(values.get('criteria')).map((description, index) => ({ id: `criterion-${index + 1}`, description })),
+  }
+  const showError = message => { taskForm.querySelector('.form-error').textContent = message }
+  if (!fields.title || !fields.goal || !fields.deliverables.length || !fields.criteria.length) {
+    showError('请填写标题、目标、交付物和验收条件。')
+    return
+  }
+  void perform(async () => {
+    selected = editing
+      ? await mutate('task.updateBrief', { taskId: editing.id, expectedRevision: editing.revision, ...fields })
+      : await mutate('task.create', { workspaceId: workspace.value, ...fields })
+    taskDialog.close()
+    renderDetail()
+    await loadList({ selectFirst: false })
+    feedback('已保存任务')
+  }, showError)
+})
+
+$('workdir-form').addEventListener('submit', event => {
+  event.preventDefault()
+  const form = event.currentTarget
+  const path = new FormData(form).get('path').trim()
+  void perform(async () => {
+    const envelope = await post('/api/workspace/create', {
+      type: 'client-request', rpcId: crypto.randomUUID(), method: 'workspace/create', payload: { args: { request: { path } } },
+    })
+    if (!envelope.result.ok) throw new Error(envelope.result.error.message)
+    workdirDialog.close()
+    await loadWorkspaces(envelope.result.value.workspace.workspaceId)
+  }, message => { form.querySelector('.form-error').textContent = message })
+})
+for (const control of document.querySelectorAll('[data-close]')) {
+  control.addEventListener('click', () => control.closest('dialog').close())
+}
+$('template').addEventListener('change', fillTemplate)
+$('register').addEventListener('click', () => workdirDialog.showModal())
+$('new').addEventListener('click', () => openTaskForm())
+$('more').addEventListener('click', () => perform(() => loadList({ selectFirst: false, append: true })))
+workspace.addEventListener('change', () => perform(() => loadList()))
+void perform(() => loadWorkspaces())
