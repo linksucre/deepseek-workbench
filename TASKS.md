@@ -56,6 +56,7 @@
 | `DEV-011` | Codex | `dev/DEV-011-review-receipts` | 基于 M3 候选修复冷根派发与审阅核对和回送回执，独立复验专项 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-probe-verification` | 从 `fb5692b` 隔离复验冷根、核对与回送专项红测，只改测试和对应说明 |
 | `DEV-011` | Codex | `dev/DEV-011-pre-admission-verification` | 从 `7064604` 隔离复现原生入队前明确拒绝后阻塞任务，只改测试和验收说明 |
+| `DEV-011` | Codex | `dev/DEV-011-profile-upgrade-verification` | 从 `0907c9a` 验证旧版本真实写入的审阅回送在升级及从备份回退后可重放，只改测试和验收说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
@@ -239,3 +240,5 @@ DEV-011 `284fe3e` 从 `7064604` 的隔离工作树补上 TST-010 入队前拒绝
 DEV-011 `7064604` 修复冷根派发、显式核对摘要及回送原生 ID 作用域。冷根拒绝无状态、配额及模型副作用。新回送跨重启可核对原生受理结果，历史回送只查询由单写启动捕获的旧事件范围。浏览器同标签页重新加载保留原请求。真实 Host 的三个已复现专项全通过，另覆盖原生已受理后响应丢失、旧正文匹配和冲突、只推进一次确认 revision 与唯一原生消息。
 
 汇总候选 `integration/workbench-receipts-candidate`（行为 `bb9324c`，证据 `0907c9a`）保留另一协作者的 `8fde87b`，合并任务启动核对回执、资料身份、分页和退回恢复测试。27 项回归、相对 main 差异门禁、actionlint、真实 Harness 全链路、原生 worktree 和独立归档 Chromium 均通过。本机 3000 条任务完成 60 页核验，热读首页 p95 7.69 ms。正式发布仍受公共设计评审、TST-005 真实模型授权及 CI 可获取基线约束。
+
+DEV-011 `a6bc29f` 补上 TST-010 双版本 profile 验证。从旧插件 `8fde87b` 实际写入回送及普通消息，用新候选 `0907c9a` 打开后核对任务、审阅、会话及消息不变，旧请求重放和冲突分支无新模型请求。升级后的新回送只受理一次。独立备份副本用旧插件回退后可重放旧请求，原升级副本重启后仍可重放新请求。固定 Harness 和模拟模型下专项通过，27 项回归及对 main 的仓库门禁通过。明确入队前拒绝仍按 `284fe3e` 单独评审。
