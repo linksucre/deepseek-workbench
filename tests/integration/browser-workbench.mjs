@@ -166,6 +166,8 @@ try {
   const button = name => page.getByRole('button', { name, exact: true })
   const currentChoice = page.getByRole('region', { name: '当前执行方式' })
   const conversation = page.getByRole('region', { name: '执行会话' })
+  const composer = page.getByLabel('发给 Agent')
+  const taskState = page.locator('.state')
   const readyButton = button('启动 Agent 会话')
   const attachButton = button('核对并挂载')
   const sessionIdField = page.getByLabel('要核对的会话 ID')
@@ -309,6 +311,19 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result.error))
     return result.value.items.map(item => item.sessionId)
   }
+  async function waitTaskState(label) {
+    await taskState.getByText(label, { exact: true }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+  }
+  async function checkCancelled(rootSessionId) {
+    await waitTaskState('已取消')
+    await taskButton(recoveryTitle).getByText('已取消', { exact: true }).waitFor()
+    await conversation.getByText(rootSessionId, { exact: true }).waitFor()
+    assert.equal(await composer.isVisible(), false)
+    for (const label of ['启动 Agent 会话', '暂停任务', '恢复任务', '提交最新展示', '取消任务']) {
+      assert.equal(await button(label).isVisible(), false, label)
+    }
+  }
 
   const designTitle = 'browser design template'
   const writingTitle = 'browser writing template'
@@ -344,6 +359,22 @@ try {
   await sessionIdField.fill(orphaned[0])
   await activate(attachButton)
   await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  await waitTaskState('执行中')
+  assert.deepEqual(await nativeSessionIds(), orphaned)
+  assert.equal(modelRequests, 0)
+
+  await activate(button('暂停任务'))
+  await waitTaskState('已暂停')
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  assert.equal(await composer.isVisible(), false)
+  await activate(button('恢复任务'))
+  await waitTaskState('执行中')
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  await composer.waitFor()
+  await activate(button('取消任务'))
+  await checkCancelled(orphaned[0])
+  await activate(button('刷新任务'))
+  await checkCancelled(orphaned[0])
   assert.deepEqual(await nativeSessionIds(), orphaned)
   assert.equal(modelRequests, 0)
 
@@ -431,6 +462,8 @@ try {
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
   await openWorkbench(await start())
+  await activate(taskButton(recoveryTitle))
+  await checkCancelled(orphaned[0])
   await activate(page.getByRole('button', { name: /browser code task/ }))
   await currentChoice.getByText('代码开发 · 用户选定', { exact: true }).waitFor()
   await currentChoice.getByText(overrideReason, { exact: true }).waitFor()
@@ -595,7 +628,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium workspace switching, task templates, root-session recovery and discard, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium workspace switching, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
