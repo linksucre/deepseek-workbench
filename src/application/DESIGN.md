@@ -25,3 +25,11 @@ reserveStart 只持久化意图，将任务置为待核对。原生创建由会�
 [entry.mjs](entry.mjs) 由源码 overlay 挂载原生存储、验证器、认证任务接口和 UI。[source-overlay.mjs](../../scripts/source-overlay.mjs) 验证固定上游提交与构建模块存在后，生成只引用本机受控源码的配置。task.list 只读当前工作区；游标绑定该工作区的排序边界，按更新时间和任务 ID 分页。
 
 [host-conversation.mjs](host-conversation.mjs) 使用任务绑定确认后的原生会话。只读对话筛选显式用户文本与已组装的 Agent 文本。恢复直接验证原会话，无模型请求；暂停和取消调用 DEV-004 的被动停止验证，并在任务持久化前核对 revision。重复发送以原生输入记录检查原文并返回既有回执。
+
+## 资料索引与阶段交接 · DEV-010
+
+[`createTaskContext`](task-context.mjs) 从已持久化的任务材料和正式提交的产物来源生成资料索引，同一来源、位置和观测日期只列一次，保留其引用来自 brief、提交或二者。每条记录带工作区和原始 `SourceRef`，索引读取不打开正文。模型自述及未提交产物不会生成资料条目。默认用 30 天标记资料过期，可由宿主配置。未来或无法解析的观测日期标记为未知。
+
+按需读取首先核对选择引用是否与任务中记录的来源、位置和日期完全一致，然后委托宿主 `readSource`。读取前后均检查该来源的权限，返回前再核对任务工作区和 revision。宿主适配器需执行文件越界、URL 和会话事件的原生权限检查。返回的内容按来源数据处理。阶段交接使用持久化阶段和游标、当前执行选择、最近提交及对应的验收决定，可在原生存储重开后重新构建，无需复制资料正文或调用模型。
+
+`node tests/integration/context-smoke.mjs /path/to/built/deepseek-harness` 使用原生 JSON 后端与临时文件，验证阶段、退回原因、过期提示和权限在存储关闭再打开后仍可恢复。单元测试补充外部任务、伪造来源、读取期间撤权和 revision 竞争。当前验证走应用内部入口，生产的资料读取适配及 Workbench 入口仍需联调。 [用例](../../tests/integration/context-smoke.mjs)
