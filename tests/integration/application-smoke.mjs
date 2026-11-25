@@ -114,7 +114,45 @@ try {
     assert.deepEqual(stage.choices.map(item => item.choice.source), ['agent', 'user'])
     assert.ok(stage.choices[0].revision < stage.choices[1].revision)
   })
-  console.log('PASS: application with native storage, intent recovery boundary, authorization, override, replay, drift, return and acceptance.')
+  const approaches = [
+    { domain: 'development', title: 'Small validation fix', methods: ['direct'], reason: 'Small change with a clear check', skillIds: [] },
+    { domain: 'design', title: 'Explore the first screen', methods: ['direction-review'], reason: 'Review a direction before polishing', skillIds: [] },
+    { domain: 'writing', title: 'Newsletter update', methods: ['reuse'], reason: 'Use the established editorial workflow', skillIds: ['editorial-fixture'] },
+    { domain: 'documents', title: 'Source comparison memo', methods: ['verify-first'], reason: 'Verify source dates before drafting', skillIds: [] },
+  ]
+  const historical = []
+  await useStorage(store, async repo => {
+    const app = service(repo)
+    for (const { title, ...approach } of approaches) {
+      current = await app.create(owner, { ...brief, title, requestId: `create-${approach.domain}` })
+      current = await app.ready(owner, input('ready'))
+      current = await app.reserveStart(owner, input('reserve'), { agentPreset: 'task-collaborator' })
+      const reserved = repo.read(current.task.id).pendingIntent
+      current = await app.bindConfirmedRun(owner, input('bind'), {
+        intentId: reserved.intentId, sessionId: reserved.reservedSessionId,
+        workspaceId: reserved.workspaceId, agentPreset: reserved.agentPreset, afterSeq: 0,
+      })
+      const collaborator = { kind: 'agent', sessionId: reserved.reservedSessionId, workspaceId: reserved.workspaceId }
+      current = await app.choose(collaborator, input('recommend', { choice: approach }))
+      assert.deepEqual(current.task.choice, { ...approach, source: 'agent' })
+      const override = { ...approach, methods: ['verify-first', 'reuse'], reason: 'Owner revised the execution order' }
+      const choiceInput = input('revise', { choice: override })
+      current = await app.choose(owner, choiceInput)
+      await assert.rejects(app.choose(collaborator, input('rejected-in-run', { choice: approach })),
+        { code: 'INVALID_TRANSITION' })
+      historical.push({ current, approach, override, choiceInput })
+    }
+  })
+  await useStorage(store, async repo => {
+    const app = service(repo)
+    for (const { current: expected, approach, override, choiceInput } of historical) {
+      assert.deepEqual(await app.get(owner, expected.task.id), expected)
+      assert.deepEqual(await app.choose(owner, choiceInput), expected)
+      assert.deepEqual(repo.read(expected.task.id).stages[0].choices.map(item => item.choice),
+        [{ ...approach, source: 'agent' }, { ...override, source: 'user' }])
+    }
+  })
+  console.log('PASS: application with native storage, intent recovery boundary, authorization, four execution choices, override, replay, drift, return and acceptance.')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }
