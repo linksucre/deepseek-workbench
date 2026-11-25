@@ -58,6 +58,8 @@ let suggestionResults = []
 let unboundToolNames
 const unboundMarker = 'Workbench unbound probe'
 const suggestionMarker = 'Workbench approach probe'
+const reviewRecoveryMarker = 'review recovery probe'
+const longReviewConclusion = `${'甲'.repeat(8191)}🧪`
 const provider = createServer(async (request, response) => {
   try {
     const chunks = []
@@ -83,7 +85,8 @@ const provider = createServer(async (request, response) => {
         .find(block => block.type === 'tool_result' && block.tool_use_id === forgedToolId)
       await forgedGate
     }
-    const omitCacheUsage = step === 6 || messages.includes('review recovery probe')
+    const recoveringReview = messages.includes(reviewRecoveryMarker)
+    const omitCacheUsage = step === 6 || recoveringReview
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
     const manualPresentation = ownerPresentationCount < ownerPresentationFiles.length &&
@@ -111,7 +114,8 @@ const provider = createServer(async (request, response) => {
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
     } else {
-      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: review ? 'independent review' : 'done' } })
+      const text = review ? 'independent review' : recoveringReview ? `${longReviewConclusion}尾` : 'done'
+      events.push({ type: 'content_block_start', index: 0, content_block: { type: 'text', text } })
     }
     events.push(
       { type: 'content_block_stop', index: 0 },
@@ -566,15 +570,17 @@ hostSmoke: try {
   assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
   assert.equal((await rpc('session/list', {})).items.length, 2)
   const parentId = freshActive.runs[0].rootSessionId
-  const parentHistory = 'parent-only history marker'
+  const parentHistory = `${'parent-only history marker'.padEnd(8191, '甲')}🧪`
   await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: freshActive.task.revision,
     requestId: 'parent-history', text: parentHistory })
   await until(async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
   const parentConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 20 })
-  const parentMessage = parentConversation.messages.find(item => item.role === 'user' && item.text === parentHistory)
+  const parentMessage = parentConversation.messages.find(item => item.role === 'user' && item.text.startsWith('parent-only history marker'))
   assert.equal(parentConversation.sessionId, parentId)
   assert.ok(Number.isSafeInteger(parentMessage?.seq))
+  assert.ok(parentMessage.text.endsWith('🧪'), 'The complete boundary character is visible in the root conversation')
+  assert.equal(parentMessage.text, parentHistory)
   const reviewParent = await rpc.workbench('task.get', { taskId: fresh.task.id })
   assert.deepEqual(reviewParent.runs[0].childSessionIds, [])
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
@@ -688,7 +694,7 @@ hostSmoke: try {
   const beforeRecoveryUsage = await rpc.workbench('task.usage', { taskId: fresh.task.id })
   assert.equal(beforeRecoveryUsage.completeness, 'complete')
   const recoveryInput = { ...reviewInput, expectedRevision: (await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision,
-    requestId: 'lost-review-receipt', material: 'review recovery probe' }
+    requestId: 'lost-review-receipt', material: reviewRecoveryMarker }
   await rpc.workbench('task.delegate', recoveryInput, { status: 503 })
   const pendingReviews = (await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items
   assert.deepEqual(pendingReviews.map(item => item.status), ['completed', 'reserved'])
@@ -704,7 +710,8 @@ hostSmoke: try {
   const reconcile = { taskId: fresh.task.id, reviewId: recoverable.reviewId,
     expectedRevision: beforeRestart.task.revision, requestId: 'recover-review' }
   const recovered = await rpc.workbench('task.review.reconcile', reconcile)
-  assert.deepEqual(recovered, { ...recoverable, status: 'completed', summary: 'done' })
+  assert.ok(recovered.summary.endsWith('🧪'), 'The complete boundary character survives cold review recovery')
+  assert.deepEqual(recovered, { ...recoverable, status: 'completed', summary: longReviewConclusion })
   assert.deepEqual(await rpc.workbench('task.review.reconcile', reconcile), recovered)
   const resumedTask = await rpc.workbench('task.get', { taskId: fresh.task.id })
   assert.deepEqual(resumedTask.runs[0].childSessionIds, [review.childSessionId, recovered.childSessionId])

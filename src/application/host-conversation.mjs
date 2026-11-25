@@ -11,6 +11,19 @@ function messageText(content) {
   return content.filter(block => block.type === 'text').map(block => block.text).join('\n')
 }
 
+export function limitMessageText(text) {
+  const limit = 8192
+  if (text.length <= limit) return text
+  let end = 0
+  let remaining = limit
+  for (const character of text) {
+    end += character.length
+    remaining -= 1
+    if (remaining === 0) return text.slice(0, end)
+  }
+  return text
+}
+
 export function promptReceipt(events, id, throughSeq = Infinity) {
   for (const event of events) {
     if (event.seq > throughSeq) break
@@ -29,7 +42,7 @@ function visibleMessages(events, limit) {
     const assistant = event.type === 'assistant/message'
     if (!user && !assistant) continue
     const text = messageText(user ? event.data.content : event.data.message.content).trim()
-    if (text) messages.push({ seq: event.seq, role: user ? 'user' : 'assistant', text: text.slice(0, 8192) })
+    if (text) messages.push({ seq: event.seq, role: user ? 'user' : 'assistant', text: limitMessageText(text) })
   }
   return messages.reverse()
 }

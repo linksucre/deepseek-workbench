@@ -21,6 +21,8 @@
 
 TST-011 的上下文冒烟还验证多块会话文本的 8192 字符边界。换行计入长度，位于边界的 emoji 保持完整，后续文字截去。
 
+真实 Host 冒烟验证任务对话与跨重启恢复的审阅摘要也保持 8192 字符边界上的完整 emoji。
+
 DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，也可用下列参数逐一运行：
 
 - `--review-recovery-regressions=cold-root` 先观察原生根会话确实未加载，再核对拒绝无副作用、激活后仍可派发两次。

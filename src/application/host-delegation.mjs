@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { TaskError } from '../domain/task.mjs'
 import { createBoundedReview, requireReviewParent } from '../harness/bounded-review.mjs'
 import { observeBoundRootSession } from '../harness/session-observation.mjs'
-import { promptReceipt } from './host-conversation.mjs'
+import { limitMessageText, promptReceipt } from './host-conversation.mjs'
 
 function publicReview({ reviewId, runId, childSessionId, instruction, status, summary, createdAt }) {
   return { reviewId, runId, childSessionId, instruction, status, summary, createdAt }
@@ -15,8 +15,8 @@ function receipt(events) {
   if (end?.data.reason.kind !== 'completed') return { throughSeq, outcome: 'incomplete', summary: '' }
   const message = events.findLast(event => event.type === 'assistant/message' && event.seq > start.seq && event.seq < end.seq)
   const summary = message?.data.message.content.filter(block => block.type === 'text')
-    .map(block => block.text).join('\n').slice(0, 8192) ?? ''
-  return { throughSeq, outcome: 'completed', summary }
+    .map(block => block.text).join('\n') ?? ''
+  return { throughSeq, outcome: 'completed', summary: limitMessageText(summary) }
 }
 
 const forwardConflict = () => new TaskError('RECONCILIATION_REQUIRED', 'Check the original conversation before retrying this review forward')
