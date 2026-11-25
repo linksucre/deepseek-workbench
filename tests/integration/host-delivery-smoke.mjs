@@ -671,8 +671,12 @@ try {
   const unrelatedSource = { ...archivedSources[0], locator: JSON.stringify([randomUUID(), archivedMessages[0].seq]) }
   const otherTaskSource = { ...archivedSources[0], locator: JSON.stringify([parentId, parentMessage.seq]) }
   const toolSource = { ...archivedSources[0], locator: JSON.stringify([sessionId, samples[0].toolResultSeq]) }
-  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, otherTaskSource, toolSource)
-  await writeFile(archivedTaskFile, JSON.stringify(archived))
+  const [, presentationSeq] = JSON.parse(submitted.artifacts[0].source.locator)
+  const presentationAsMessage = { ...archivedSources[0], locator: JSON.stringify([sessionId, presentationSeq]) }
+  const nonMessageSources = [toolSource, presentationAsMessage]
+  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, otherTaskSource, ...nonMessageSources)
+  const archivedBytes = JSON.stringify(archived)
+  await writeFile(archivedTaskFile, archivedBytes)
   rpc = await start({}, { dataHome: archive })
   assert.equal(fresh.task.workspaceId, archived.record.detail.task.workspaceId)
   const otherTaskConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 50 })
@@ -680,7 +684,7 @@ try {
   assert.deepEqual(otherTaskConversation.messages.find(item => item.seq === parentMessage.seq), parentMessage)
   const archivedContext = await rpc.workbench('task.context.index', { taskId })
   assert.deepEqual(archivedContext.sources.filter(entry => entry.origins.includes('brief') &&
-    entry.source.kind === 'session-event' && entry.source.locator !== toolSource.locator)
+    entry.source.kind === 'session-event' && !nonMessageSources.some(item => item.locator === entry.source.locator))
     .map(entry => entry.source), archivedSources)
   for (const [index, archivedSource] of archivedSources.entries()) {
     assert.deepEqual((await rpc.workbench('task.context.load', { taskId, source: archivedSource })).content,
@@ -688,8 +692,13 @@ try {
   }
   await rpc.workbench('task.context.load', { taskId, source: unrelatedSource }, { status: 404 })
   await rpc.workbench('task.context.load', { taskId, source: otherTaskSource }, { status: 404 })
-  await rpc.workbench('task.context.load', { taskId, source: toolSource }, { status: 404 })
+  for (const rejected of nonMessageSources) {
+    await rpc.workbench('task.context.load', { taskId, source: rejected }, { status: 404 })
+  }
+  const changedDate = new Date(Date.parse(observedAt) + 1000).toISOString()
+  await rpc.workbench('task.context.load', { taskId, source: { ...archivedSources[0], observedAt: changedDate } }, { status: 404 })
   assert.equal(allModelRequests, beforeRollback)
+  assert.equal(await readFile(archivedTaskFile, 'utf8'), archivedBytes)
   await stop()
 
   await cp(backup, restored, { recursive: true })
