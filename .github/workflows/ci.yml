@@ -55,6 +55,10 @@ jobs:
       - run: node tests/integration/application-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/usage-host-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Verify persisted task context
+        run: node tests/integration/context-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Measure warm task list pagination
+        run: node tests/integration/list-performance.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Install pinned browser
         working-directory: upstream/apps/web
         run: corepack pnpm exec playwright install chromium
