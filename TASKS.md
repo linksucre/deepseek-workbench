@@ -8,7 +8,7 @@
 | DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、元模式验证、负例回归与 PR 流程 |
 | DEV-003 | FR-002 | src/domain | DEV-002 | done | 纯状态机、领域测试与契约校验 |
 | DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | active | 兼容试验、会话绑定、授权及故障恢复 |
-| DEV-005 | NFR-003 | src/storage | DEV-003 | active | 数据域、幂等回执、备份与恢复测试 |
+| DEV-005 | NFR-003 | src/storage | DEV-003 | review | 数据域、幂等回执、备份与恢复测试 |
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | planned | 用例、冲突控制、接受退回及故障注入测试 |
 | DEV-007 | FR-005 | src/delivery | DEV-004 | planned | 原生事件、交付版本与证据校验 |
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | planned | 任务界面及两条 M1 验收链路 |
@@ -23,5 +23,7 @@
 
 | 工单 | 负责人 | 分支 | 改动范围 |
 | --- | --- | --- | --- |
-| DEV-004 | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
-| DEV-005 | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
+| `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
+| `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
+
+DEV-005 提交 `d139fe0`，原生 JSON 后端已验证启动意图持久化、revision 竞争、幂等重放、关闭重开与备份恢复。工作台 Host 集成和迁移仍待验证。DEV-004 可通过 `src/storage/task-repository.mjs` 的 commit 在单键更新中保存或清除 pendingIntent；跨模块接口由 DEV-006 接入。
