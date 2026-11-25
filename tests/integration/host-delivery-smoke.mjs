@@ -959,6 +959,35 @@ hostSmoke: try {
       assert.equal(await nativeCount(newInput.requestId), 1)
       assert.equal(allModelRequests, modelCountBefore + 2)
       console.log('PASS: a new forward conflicts while the original is pending and succeeds once after settlement.')
+
+      await stop()
+      const splitProfile = join(root, 'pending-forward-split-receipt')
+      await cp(data, splitProfile, { recursive: true })
+      rpc = await start({}, { dataHome: splitProfile })
+      const splitAt = text.indexOf('\n')
+      assert.ok(splitAt > 0)
+      const splitContent = [text.slice(0, splitAt), text.slice(splitAt + 1)]
+        .map(part => ({ type: 'text', text: part }))
+      assert.deepEqual(await rpc('session/prompt', { ...nativeInput, content: splitContent }), { accepted: true })
+      await until(async () => {
+        const state = await rpc('session/state', { sessionId: parentId })
+        return !state.running && state.queue?.length === 0 && await nativeCount(refused.requestId) === 1
+      }, 'the native receipt preserves its distinct content blocks')
+      await stop()
+      rpc = await start({}, { dataHome: splitProfile })
+      const nativeEvents = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 100 })
+      const splitMessage = nativeEvents.records.find(({ event }) => event.type === 'user/message' &&
+        event.data.source?.rpcId === nativeInput.requestId)
+      assert.deepEqual(splitMessage?.event.data.content, splitContent)
+      const beforeSplitReplay = allModelRequests
+      const splitResult = await rpc.workbench('task.review.forward', refused, { status: [200, 409] })
+      assert.equal(splitResult.code, 'RECONCILIATION_REQUIRED',
+        'Equal joined text cannot confirm a forward with a different native content block sequence')
+      assert.deepEqual(await rpc.workbench('task.get', { taskId }), afterRefusal)
+      assert.deepEqual(await readFile(taskRecord(splitProfile)), sourceRecord)
+      assert.equal(await nativeCount(refused.requestId), 1)
+      assert.equal(allModelRequests, beforeSplitReplay)
+      console.log('PASS: a different native block sequence leaves the review forward pending after restart.')
       break hostSmoke
     }
     const paused = await rpc.workbench('task.pause', {

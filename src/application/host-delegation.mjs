@@ -24,6 +24,8 @@ const forwardRefused = () => new TaskError('INVALID_TRANSITION', 'The original c
 const forwardAck = sessionId => ({ sessionId, accepted: true })
 const nativeDigest = (taskId, runId, requestId) => createHash('sha256')
   .update(JSON.stringify([taskId, runId, requestId])).digest('hex')
+const matchesForwardReceipt = (content, text) => content?.length === 1 &&
+  content[0].type === 'text' && content[0].text === text
 
 export function createHostDelegation({ app, repository, conversation, workspaceRegistry, sessionQuery, agents, subagents }) {
   const runReview = createBoundedReview({ agents, subagents, workspaceRegistry, sessionQuery })
@@ -211,7 +213,7 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
         const nativeId = `workbench-review-forward-v2-${nativeDigest(taskId, runId, requestId)}`
         return conversation.withSession(principal, record.detail, sessionId, async ({ events }, timeout) => {
           if (previous) {
-            if (promptReceipt(events, previous.nativeId) !== text) throw forwardConflict()
+            if (!matchesForwardReceipt(promptReceipt(events, previous.nativeId), text)) throw forwardConflict()
             await confirmForward(principal, taskId, previous, 'accepted')
             return forwardAck(sessionId)
           }
@@ -221,7 +223,7 @@ export function createHostDelegation({ app, repository, conversation, workspaceR
           if (throughSeq >= 0 && (events.at(-1)?.seq ?? -1) < throughSeq) throw forwardConflict()
           const legacy = promptReceipt(events, legacyId, throughSeq)
           if (legacy !== undefined) {
-            if (legacy !== text) throw forwardConflict()
+            if (!matchesForwardReceipt(legacy, text)) throw forwardConflict()
             return forwardAck(sessionId)
           }
           await app.beginReviewForward(principal, input, { runId, sessionId, nativeId })

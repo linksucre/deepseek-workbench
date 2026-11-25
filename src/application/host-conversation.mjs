@@ -30,7 +30,7 @@ export function promptReceipt(events, id, throughSeq = Infinity) {
     const candidates = event.type === 'agent/inbox/spliced' ? event.data.inserted
       : event.type === 'user/message' ? [event.data] : []
     const message = candidates.find(item => item.source?.kind === 'user' && item.source.rpcId === id)
-    if (message) return messageText(message.content)
+    if (message) return message.content
   }
 }
 
@@ -118,7 +118,7 @@ export function createHostConversation({ app, repository, workspaceRegistry, ses
         return withSession(principal, detail, sessionId, async ({ events }, timeout) => {
           const original = promptReceipt(events, requestId)
           if (original !== undefined) {
-            if (original !== text) throw new TaskError('INVALID', 'Request ID reused with a different message')
+            if (messageText(original) !== text) throw new TaskError('INVALID', 'Request ID reused with a different message')
             return { sessionId, accepted: true }
           }
           const latest = await app.get(principal, input.taskId)
