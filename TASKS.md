@@ -283,4 +283,6 @@ DEV-011 `1c96c9c` 在 macOS 原生 worktree 隔离专项增加路径预检。普
 
 DEV-002 确认 Workbench 已配置公开 GitHub 远端。复核期间远端 `main` 初始化为本地 M0 `e252c32`，并启用分支保护，要求一名审批人、过期评审失效、管理员同样受规则约束，以及 `Repository gate` 和 `Harness integration` 通过。独立检出的 M0 通过仓库门禁、actionlint 和真实 Host 预设冒烟，固定 M0 上游 `4b399c39a6` 可从空 Git 仓库拉取。远端 [CI 45644047839](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839) 的 `Repository gate` 已通过，`Harness integration` 仍排队。M3 的保护版基线上游返回 `not our ref`。仅包含 Markdown 的 DEV-005 `061b0f7`、DEV-010 `9aa282a`、DEV-011 `0849cd7` 均通过文档门禁，已确认远端分支 SHA 与本地一致。远端候选也已到 `1c96c9c`。尚无评审 PR，创建草稿 PR 待确认。
 
-DEV-002 从 `origin/main` 当前基线独立比较 `fcbc680`。基于可拉取的公开 Harness `4b399c39a6`，加强版 M0 通过 npm 锁文件安装、两项门禁回归、差异文档门禁、actionlint 和真实 Host 冒烟。该版本逐项验证模型请求包含文件、查证、技能及交付工具，并验证标准预设隔离。远端首轮 macOS 作业 `139310091031` 仍为 `queued`、未分配 runner、无执行步骤。仓库的 Actions 已启用。此轮本地结果未计为远端 CI。
+DEV-002 从 `origin/main` 当前基线独立比较 `fcbc680`。基于可拉取的公开 Harness `4b399c39a6`，加强版 M0 通过 npm 锁文件安装、两项门禁回归、差异文档门禁、actionlint 和真实 Host 冒烟。该版本逐项验证模型请求包含文件、查证、技能及交付工具，并验证标准预设隔离。此轮本地结果未计为远端 CI。
+
+DEV-002 远端首轮 macOS 作业 `139310091031` 因 GitHub 托管 runner 容量，在未分配 runner、未执行任何步骤的情况下结束。按失败作业重试同一提交 `e252c32` 后，第二轮 macOS 作业 `139321219573` 已获得 runner，成功检出固定 Harness，开始构建。`Repository gate` 通过。此轮复用原工作流及保护规则。
