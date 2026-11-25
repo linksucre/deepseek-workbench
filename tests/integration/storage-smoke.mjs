@@ -143,6 +143,36 @@ try {
     assert.equal(repo.read(id).detail.task.revision, 2)
   })
 
+  const lateSource = join(temp, 'valid-late-source')
+  const lateDestination = join(temp, 'valid-late-destination')
+  const lateDraft = structuredClone(newDraft)
+  lateDraft.task.title = 'Valid record published after mount'
+  const lateDocument = directory => join(directory, TASK_DOMAIN, 'tasks', `${newId}.json`)
+  await useStorage(lateSource, repo => repo.create(lateDraft, request('original-create')))
+  const originalBytes = await readFile(lateDocument(lateSource))
+  await cp(backup, lateDestination, { recursive: true })
+  await useStorage(lateDestination, async repo => {
+    assert.equal(repo.read(newId), undefined)
+    // Restore a valid V1 file into this isolated profile after its record index was loaded.
+    await writeFile(lateDocument(lateDestination), originalBytes, { flag: 'wx' })
+    const [result] = await Promise.allSettled([repo.create(newDraft, request('late-create'))])
+    assert.deepEqual({
+      outcome: result.status,
+      originalBytesPreserved: originalBytes.equals(await readFile(lateDocument(lateDestination))),
+      conflictingCreateVisible: repo.read(newId) !== undefined,
+    }, { outcome: 'rejected', originalBytesPreserved: true, conflictingCreateVisible: false },
+    'Creating a task must preserve a valid V1 document that arrives after the domain was opened')
+    assert.deepEqual(await repo.exportSnapshot(), exported)
+  })
+  await useStorage(lateDestination, async repo => {
+    assert.deepEqual(repo.read(newId).detail, lateDraft)
+    assert.deepEqual(repo.read(newId).operations.map(entry => entry.requestId), ['original-create'])
+    const updated = await repo.commit(newId, { request: request('ready-late'), expectedRevision: 0 }, ready)
+    assert.equal(updated.task.revision, 1)
+    assert.equal(updated.task.status, 'ready')
+    assert.equal(updated.task.title, lateDraft.task.title)
+  })
+
   const restored = join(temp, 'restored')
   await cp(backup, restored, { recursive: true })
   await useStorage(restored, async repo => {
