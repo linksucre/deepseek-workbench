@@ -94,7 +94,7 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       }
       return {
         detail, stages,
-        pendingIntent: command.kind === 'block-start' ? command.intent
+        pendingIntent: ['block-start', 'record-start-receipt'].includes(command.kind) ? command.intent
           : command.kind === 'bind' || command.kind === 'clear-block' ? null : current.pendingIntent,
       }
     })
@@ -146,9 +146,30 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       }, { payload: { input, agentPreset } })
     },
 
+    saveNativeReceipt(principal, input, receipt) {
+      return mutate(principal, 'task.start.receipt', input, record => {
+        const intent = record.pendingIntent
+        if (!intent || intent.intentId !== receipt.intentId ||
+            intent.reservedSessionId !== receipt.sessionId || intent.workspaceId !== receipt.workspaceId) {
+          reject('RECONCILIATION_REQUIRED', 'Native creation receipt did not match this startup')
+        }
+        return { kind: 'record-start-receipt', intentId: intent.intentId, intent: {
+          ...intent, receipt: { sessionId: receipt.sessionId, workspaceId: receipt.workspaceId, outcome: receipt.outcome },
+        } }
+      }, { payload: { input, receipt } })
+    },
+
+    discardStart(principal, input) {
+      return mutate(principal, 'task.reconcile.discard', input, record => {
+        const intent = record.pendingIntent
+        if (!intent || input.rootSessionId !== null) reject('RECONCILIATION_REQUIRED', 'No matching startup intent')
+        return { kind: 'clear-block', intentId: intent.intentId }
+      })
+    },
+
     // Called only after the Host verified the native root and workspace membership.
-    bindConfirmedRun(principal, input, verified) {
-      return mutate(principal, 'task.start.bind', input, (record, now) => {
+    bindConfirmedRun(principal, input, verified, operation = 'task.start.bind') {
+      return mutate(principal, operation, input, (record, now) => {
         const intent = record.pendingIntent
         if (!intent || intent.intentId !== verified.intentId ||
             intent.reservedSessionId !== verified.sessionId || intent.workspaceId !== verified.workspaceId ||

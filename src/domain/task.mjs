@@ -174,6 +174,9 @@ export function evolveTask(detail, command, { expectedRevision, now }) {
       stateOf(task, 'ready', 'paused')
       task.status = 'blocked'
       break
+    case 'record-start-receipt':
+      stateOf(task, 'blocked')
+      break
     case 'clear-block':
       stateOf(task, 'blocked')
       task.status = task.activeRunId === null ? 'ready' : 'paused'

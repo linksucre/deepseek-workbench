@@ -4,7 +4,7 @@ M1 使用宿主 `storageDomain` 的业务侧存储。逻辑域为 `workbench_tas
 
 | 结构 | 约束 |
 | --- | --- |
-| pendingIntent | 同任务最多一个未决启动意图。commit 受当前 revision 及 intentId 约束。 |
+| pendingIntent | 同任务最多一个未决启动意图，可附已核验的原生创建回执。commit 受当前 revision 及 intentId 约束。 |
 | stages | 记录 Run 的阶段边界和执行选择历史，旧 V1 记录缺少该字段时按空数组读取。 |
 | operations | 按操作者、操作、requestId 和输入摘要保存回执。业务持续运行时间内确保重放可核对。 |
 | runs | 根会话 ID 唯一绑定于工作区范围内的一个任务。首版通过单写宿主串行分配并复查全局绑定，跨 Task 原子事务不可假设。 |

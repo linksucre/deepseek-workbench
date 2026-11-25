@@ -9,6 +9,9 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
   const intent = z.strictObject({
     intentId: text, reservedSessionId: text, runId: text, workspaceId: text,
     agentPreset: text, requestDigest: text, createdAt: text,
+    receipt: z.strictObject({
+      sessionId: text, workspaceId: text, outcome: z.enum(['created', 'attach-failed']),
+    }).optional(),
   })
   const operation = z.strictObject({
     actorId: text, operation: text, requestId: text, digest: text,

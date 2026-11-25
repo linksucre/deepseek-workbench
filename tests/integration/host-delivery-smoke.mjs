@@ -132,7 +132,7 @@ try {
   await writeFile(patch, `${preset}\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`)
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
-  const rpc = await start()
+  let rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
   const { workspace } = await rpc('workspace/create', { path: root })
   const brief = {
     requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
@@ -147,7 +147,32 @@ try {
     taskId: draft.task.id, requestId: 'workbench-ready', expectedRevision: draft.task.revision,
   })
   assert.equal(ready.task.status, 'ready')
-  const { sessionId } = await rpc('session/create', { workspaceId: workspace.workspaceId, agentPreset: 'task-collaborator' })
+  const startup = { taskId: draft.task.id, requestId: 'launch', expectedRevision: ready.task.revision }
+  const blocked = await rpc.workbench('task.start', startup)
+  assert.equal(blocked.task.status, 'blocked')
+  assert.equal(blocked.runs.length, 0)
+  const before = await rpc('session/list', {})
+  assert.equal(before.items.length, 1)
+  const { sessionId } = before.items[0]
+  assert.ok(!(await rpc('workspace/create', { path: root })).workspace.sessionIds.includes(sessionId))
+  assert.equal(modelSteps, 0)
+  await stop()
+
+  rpc = await start()
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), blocked)
+  assert.deepEqual(await rpc.workbench('task.start', startup), blocked)
+  const attach = {
+    taskId: draft.task.id, requestId: 'recover', expectedRevision: blocked.task.revision,
+    action: 'attach', rootSessionId: sessionId,
+  }
+  assert.equal((await rpc.workbench('task.reconcile', { ...attach, rootSessionId: 'other' }, { status: 409 })).code,
+    'RECONCILIATION_REQUIRED')
+  const attached = await rpc.workbench('task.reconcile', attach)
+  assert.equal(attached.task.status, 'active')
+  assert.equal(attached.runs[0].rootSessionId, sessionId)
+  assert.deepEqual(await rpc.workbench('task.reconcile', attach), attached)
+  assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId), [sessionId])
+  assert.deepEqual((await rpc('workspace/create', { path: root })).workspace.sessionIds, [sessionId])
   await rpc('session/prompt', {
     sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: marker }],
   })
@@ -165,7 +190,7 @@ try {
       WORKBENCH_DELIVERY_RESULT: resultPath,
       ...(index > 0 && { WORKBENCH_DELIVERY_PREVIOUS: join(root, `probe-${index - 1}.json`) }),
     })
-    assert.deepEqual(await restarted.workbench('task.get', { taskId: draft.task.id }), ready)
+    assert.deepEqual(await restarted.workbench('task.get', { taskId: draft.task.id }), attached)
     assert.deepEqual(await restarted.workbench('task.create', brief), draft)
     const sample = await until(async () => {
       try { return JSON.parse(await readFile(resultPath, 'utf8')) }
@@ -178,7 +203,38 @@ try {
   }
   assert.equal(samples[0].latest[0].source.locator, samples[1].latest[0].source.locator)
   assert.notEqual(samples[0].latest[0].version, samples[1].latest[0].version)
-  console.log('PASS: native present events, cold event lookup, stage and authorization checks, and version changes across Host restarts.')
+  rpc = await start()
+  const fresh = await rpc.workbench('task.create', { ...brief, requestId: 'second-task' })
+  const readyFresh = await rpc.workbench('task.ready', {
+    taskId: fresh.task.id, requestId: 'ready', expectedRevision: 0,
+  })
+  const freshStart = { taskId: fresh.task.id, requestId: 'start', expectedRevision: readyFresh.task.revision }
+  const freshActive = await rpc.workbench('task.start', freshStart)
+  assert.equal(freshActive.task.status, 'active')
+  assert.notEqual(freshActive.runs[0].rootSessionId, sessionId)
+  assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
+  assert.equal((await rpc('session/list', {})).items.length, 2)
+  const knownIds = new Set((await rpc('session/list', {})).items.map(item => item.sessionId))
+  await stop()
+  rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
+  const uncertain = await rpc.workbench('task.create', { ...brief, requestId: 'lost-receipt-task' })
+  await rpc.workbench('task.ready', { taskId: uncertain.task.id, requestId: 'ready', expectedRevision: 0 })
+  const lostStart = { taskId: uncertain.task.id, requestId: 'start', expectedRevision: 1 }
+  await rpc.workbench('task.start', lostStart, { status: 409 })
+  const unknownId = (await rpc('session/list', {})).items.find(item => !knownIds.has(item.sessionId))?.sessionId
+  assert.ok(unknownId)
+  await stop()
+  rpc = await start()
+  const unresolved = await rpc.workbench('task.get', { taskId: uncertain.task.id })
+  assert.equal(unresolved.task.status, 'blocked')
+  assert.deepEqual(await rpc.workbench('task.start', lostStart), unresolved)
+  await rpc.workbench('task.reconcile', {
+    taskId: uncertain.task.id, requestId: 'recover', expectedRevision: unresolved.task.revision,
+    action: 'attach', rootSessionId: unknownId,
+  }, { status: 409 })
+  assert.equal((await rpc('session/list', {})).items.length, 3)
+  assert.ok(!(await rpc('workspace/create', { path: root })).workspace.sessionIds.includes(unknownId))
+  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, presentation lookup and version checks.')
 } finally {
   await stop()
   provider.closeAllConnections()

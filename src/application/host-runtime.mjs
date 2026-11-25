@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { TaskError } from '../domain/task.mjs'
 import { openTaskRepository } from '../storage/task-repository.mjs'
+import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
 
 const endpoint = '/workbench/v1/command'
@@ -61,12 +62,18 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     repository, delivery,
     authorize: ({ principal, workspaceId }) => principal === owner && ctx.workspaceRegistry.get(workspaceId) !== undefined,
   })
+  const lifecycle = createHostStart({
+    app, repository, sessionController: ctx.sessionController,
+    sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
+  })
   const methods = {
     'task.create': input => app.create(owner, input),
     'task.get': input => app.get(owner, input.taskId),
     'task.updateBrief': input => app.updateBrief(owner, input),
     'task.ready': input => app.ready(owner, input),
     'task.choose': input => app.choose(owner, input),
+    'task.start': input => lifecycle.start(owner, input),
+    'task.reconcile': input => lifecycle.reconcile(owner, input),
   }
   const commands = new Map(Object.entries(methods).map(([id, run]) => {
     const { input, output, actor } = operations.get(id)

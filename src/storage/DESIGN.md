@@ -13,3 +13,5 @@ exportSnapshot 通过同一队列生成一致的脱敏前业务快照。维护�
 验证命令为 `node tests/integration/storage-smoke.mjs /path/to/built-deepseek-harness`。测试在固定基线使用原生 DomainFacility 和 JSON 后端：并发 revision、请求重放、意图归属检查、关闭重开与物理备份打开。业务 API 和实际会话绑定留给后续联调。
 
 V1 记录可以附带 stages。每个阶段记录所属 Run、开始游标和选择历史；缺少该字段的旧 V1 记录读取为空数组。初始化和选择更新与任务 revision 同步提交。当前每个 Run 建立一个阶段。阶段历史的选择对象从统一 TaskDetail 契约验证。
+
+启动意图可记录原生创建回执。该字段为 V1 可选字段，旧意图缺证据时不得用于复挂。回执和 revision 一起提交，清除或完成启动后同一事务移除待处理意图。
