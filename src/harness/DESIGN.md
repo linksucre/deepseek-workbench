@@ -43,3 +43,10 @@ DEV-004 的业务接入应在写入 `paused` 或 `cancelled` 前，确认当前�
 Host 同时采用两层隔离：在 agent/created 时限制继承工具为空，若还有可见工具拒绝启动；执行管线另加拒绝 guard。审阅单独返回文本与子会话 ID，不给主 Agent 自动发送新消息。一个根会话一次只允许一个在途审阅，超时尝试停止并等待释放。共享目录的写入冲突通过不提供任何写入能力消除。
 
 已用真实 Host 的模拟模型验证默认根会话保留原功能、审阅没有工具及未选中的父上下文、未经授权拒绝、并发第二次拒绝以及原生父子身份。当前只在生产 overlay 安装审阅预设和隔离策略；可调用的 host endpoint 是测试夹具。用户授权界面、跨重启请求去重、结果记录与子会话用量归属仍待工作台接线。
+
+
+### 原生 worktree 写入隔离试验
+
+在临时 Git 仓库用固定 Harness 的实验 worktree 服务，先后由两个独立 Session 从同一提交创建各自的 checkout。测试通过 `workspace-write` 原生沙箱运行本地命令，两个 Session 分别改写各自的同名文件。跨写其他 Session、源 checkout 及跨目录更新共享 Git 索引均被拒绝。退出后保留两个 checkout，原用户未提交文件没有被带入或修改。测试所有者在临时仓库提交两份结果，使用 Git 的只读合并试算验证冲突，两个分支与原 checkout 保持原样。
+
+`node tests/integration/worktree-isolation-smoke.mjs /path/to/built/deepseek-harness` 从固定源码加载原生测试夹具，需要本机 Git 和 `workspace-write` 沙箱。已在 macOS、Node 24.22.3 与 Apple Git 2.39.3 的本地仓库验证，没有配置远端或发起模型调用。试验结论适用于本地写入和用户处理冲突。工作台的生产委派仍使用无工具审阅，写入授权和真实子任务的合并入口另需评审。 [用例](../../tests/integration/worktree-isolation-smoke.mjs)

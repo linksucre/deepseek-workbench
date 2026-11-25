@@ -11,7 +11,7 @@
 | TST-007 | 迁移与发布 | [存储原生后端冒烟](tests/integration/storage-smoke.mjs) 验证 V1 兼容、备份、损坏记录及其原始字节保留、重放拒绝、重开、并发 revision 和回执重放；[Host 交付冒烟](tests/integration/host-delivery-smoke.mjs) 验证同版本停用与恢复 |
 | TST-008 | 列表性能与界面 | [分页基准](tests/integration/list-performance.mjs) 写入 3000 条任务并重开原生后端，采样 50 次热读 50 条并记录 p95、环境和样本；[真实浏览器双链路](tests/integration/browser-workbench.mjs) 验证会话对话、材料漂移、退回及再次接受，覆盖 390px 小屏、键盘、会话跳转、8192 字符目标及真实用户确认与合成证据的分类展示 |
 | TST-009 | 工程规范 | 自动校验文档、唯一编号、追踪覆盖、任务依赖及契约引用，PR 检查敏感目录的文档变更；元模式与工具缺失均有负例回归 |
-| TST-010 | 多 Agent 协作 | [原生 Host 审阅隔离](tests/integration/host-delivery-smoke.mjs) 验证默认须用户派发、无工具及父上下文继承、授权、并发限制、原生完成但尚未入账时重启恢复、显式回送及子会话用量。由 [浏览器验收](tests/integration/browser-workbench.mjs) 验证 UI 派发与回送 |
+| TST-010 | 多 Agent 协作 | [原生 Host 审阅隔离](tests/integration/host-delivery-smoke.mjs) 验证默认须用户派发、无工具及父上下文继承、授权、并发限制、原生完成但尚未入账时重启恢复、显式回送及子会话用量。由 [浏览器验收](tests/integration/browser-workbench.mjs) 验证 UI 派发与回送；[worktree 试验](tests/integration/worktree-isolation-smoke.mjs) 验证本地写隔离、共享 Git 元数据拒绝和冲突保留 |
 | TST-011 | 上下文索引 | [上下文冒烟](tests/integration/context-smoke.mjs) 验证来源、日期、权限、过期提示和重启恢复；Host 测试验证原生提交事件，工作台公共读取入口待验 |
 | TST-012 | M1 首条集成验收 | [评审场景](docs/design/M1-RECOVERY-AND-SUBMISSION.md)，使用真实 Host 和模拟模型，覆盖预留 ID、重启、挂载、用户覆盖、提交选择、漂移、退回与再次接受 |
 
