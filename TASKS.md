@@ -67,6 +67,7 @@
 | `DEV-011` | Codex | `dev/DEV-011-review-receipts` | 基于 M3 候选修复冷根派发与审阅核对和回送回执，独立复验专项 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-probe-verification` | 从 `fb5692b` 隔离复验冷根、核对与回送专项红测，只改测试和对应说明 |
 | `DEV-011` | Codex | `dev/DEV-011-pre-admission-verification` | 从 `7064604` 隔离复现原生入队前明确拒绝后阻塞任务，只改测试和验收说明 |
+| `DEV-011` | Codex | `dev/DEV-011-unknown-forward-verification` | 从 `1b3d2c4` 核对跨重启无原生受理证据的回送，范围为联调测试及恢复评审稿 |
 | `DEV-011` | Codex | `dev/DEV-011-profile-upgrade-verification` | 从 `0907c9a` 验证旧版本真实写入的审阅回送在升级及从备份回退后可重放，只改测试和验收说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
@@ -289,3 +290,5 @@ DEV-002 从 `origin/main` 当前基线独立比较 `fcbc680`。基于可拉取�
 DEV-002 远端首轮 macOS 作业 `139310091031` 因 GitHub 托管 runner 容量，在未分配 runner、未执行任何步骤的情况下结束。重试同一提交 `e252c32` 后，[第二轮 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839/attempts/2) 的 `Repository gate` 和 `Harness integration` 均通过。作业 `139321219573` 成功检出公开 Harness 基线，10 个构建门禁和模拟模型预设冒烟通过。此轮复用原工作流及保护规则。候选验收表本地提交 `f496ba6` 已记入 M0 结果，M3 仍需自己的远端验证。
 
 DEV-012 `1b3d2c4` 的 TST-005 模拟预检通过。在真实 Host 的独立技能目录创建写作夹具，验证原生目录列出技能、`skill` 返回正文、`workbench_suggest` 保存 `reuse` 和技能 ID，用户改选后从备份冷读保留前后两个来源。真实 Host 全量及三个审阅专项、27 项回归、仓库门禁与 actionlint 通过，本地候选已更新。真实模型试跑仍待授权。复查远端仍无评审 PR，上游保护版 Harness 仍返回 `not our ref`。
+
+DEV-011 `9f7ec87` 在真实 Host 的本地模拟环境验证未知受理回送。入队前注入没有可信结论的中断，停写备份冷读后原请求只返回待核对，暂停和取消均拒绝；原生消息、模型调用和冷重放后的 revision 不变。明确拒绝专项、27 项回归、仓库门禁与 actionlint 仍通过。候选恢复路径及去重验收已记入独立 M3 评审稿，公开恢复语义等待维护者批准。
