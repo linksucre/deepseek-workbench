@@ -1,0 +1,12 @@
+{
+  "name": "deepseek-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "^24.22.3 || >=26.13.1", "dsh": "0.2.3-alpha.2" },
+  "dsh": { "bundle": "./src/preset/cordis.patch.yml" },
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test:smoke": "node tests/integration/harness-smoke.mjs"
+  }
+}

@@ -1,0 +1,51 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repository:
+    name: Repository gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: npm run check
+      - name: Check change documentation
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: npm run check -- --base "$BASE_SHA"
+  integration:
+    name: Harness integration
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - name: Read pinned Harness version
+        id: baseline
+        run: |
+          node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+b.commit)' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.baseline.outputs.repository }}
+          ref: ${{ steps.baseline.outputs.commit }}
+          path: upstream
+          persist-credentials: false
+      - name: Build pinned Harness
+        working-directory: upstream
+        run: |
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm run build
+      - run: npm run test:smoke -- "$GITHUB_WORKSPACE/upstream"
