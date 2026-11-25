@@ -37,6 +37,7 @@
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
 | `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
 | `DEV-005` | Codex | `dev/DEV-005-storage-failure-verification` | 基于 `04ff750` 补验 TST-007 不可读取的任务路径、打开后的记录损坏、拒写后从干净备份重试 |
+| `DEV-005` | Codex | `dev/DEV-005-snapshot-order-verification` | 从 `a94549c` 验证 TST-007 写入队列中的业务快照及备份复读，以及备份恢复回送失败回执，仅修改对应测试及说明 |
 | `DEV-005` | Codex | `dev/DEV-005-profile-recovery-guide` | 在 `8ad4e9b` 补齐 NFR-003 停写备份、恢复副本及导出边界说明，验证复制命令 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence-design` | 固定 Host 的自动机器检查来源、授权、版本与重启语义评审 |
@@ -259,3 +260,5 @@ DEV-008 的回送拒绝后重试修复 `86dfdef` 已合入联调代码 `c2591c5`
 DEV-006 `b132967` 修复 DEV-011 回送错误证明。固定 Harness 的真实 Host 在入队后注入附同名 `session/not-found` 的普通异常，候选 `c2487a0` 将其误记为 `INVALID_TRANSITION`。修复后只有带原生标记、错误码匹配且指向本次根会话的结构化拒绝才结算失败。相同注入返回待核对，重启后从原生事件确认只入队一次。明确拒绝和原三项审阅专项、完整 Host、27 项回归、仓库门禁、actionlint 和独立安装包 Chromium 通过，使用本地模拟模型。提交可接入联调分支。
 
 DEV-002 在本地候选 `a373791` 合入 `b132967`，验收记录 `a94549c`。同一代码提交通过 27 项回归、差异文档门禁、actionlint、预设、存储、应用、用量、资料、worktree、分页、完整真实 Host、明确拒绝、双版本升级与备份回退及独立归档 Chromium。3000 条任务顺序、末游标和全部 60 页通过，本机应用层首页热读 p95 10.79 ms。TST-005 四项合成材料及开发基线测试复核完成，待真实模型授权后运行。候选仍待公共设计评审与上游可拉取基线。
+
+DEV-005 `65624be` 补齐 TST-007 的双任务写入队列快照和备份复读。固定 Harness 的原生 JSON 后端核对两份快照的任务顺序、revision 与回执，修改导出副本不影响存储，备份重开后内容一致。真实 Host 从停写后的独立备份恢复回送失败回执，可重放失败、暂停恢复并用新 ID 回送一次，原 profile 的任务文件字节保持不变。两项专项、27 项回归、仓库门禁和 actionlint 通过。本地候选已快进至该测试和文档提交。
