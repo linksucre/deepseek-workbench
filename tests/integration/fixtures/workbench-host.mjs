@@ -15,6 +15,22 @@ async function exists(path) {
 
 export async function apply(ctx) {
   const forwardFault = process.env.WORKBENCH_TEST_FORWARD_RECEIPT_FAULT
+  const forwardRefusal = process.env.WORKBENCH_TEST_FORWARD_REFUSAL
+  if (forwardRefusal) {
+    const controller = ctx.sessionController
+    const prompt = controller.prompt.bind(controller)
+    controller.prompt = async (input, signal) => {
+      if (await exists(forwardRefusal) && await readFile(forwardRefusal, 'utf8') === input.requestId) {
+        await unlink(forwardRefusal)
+        throw Object.assign(new Error('Injected native refusal before prompt admission'), {
+          isDSHRemoteError: true,
+          code: 'session/not-found',
+          details: { sessionId: input.sessionId },
+        })
+      }
+      return prompt(input, signal)
+    }
+  }
   if (forwardFault) {
     const controller = ctx.sessionController
     const prompt = controller.prompt.bind(controller)
