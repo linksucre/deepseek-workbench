@@ -494,6 +494,9 @@ function reviewPanel(task) {
         await command('task.review.forward', input)
       } catch (error) {
         if (['INVALID', 'REVISION_CONFLICT', 'INVALID_TRANSITION'].includes(error.code)) sessionStorage.removeItem(key)
+        if (error.code === 'INVALID_TRANSITION' && !workspaceLoadPending && selected?.task.id === task.id) {
+          try { await loadTask(task.id) } catch { /* preserve the original error */ }
+        }
         throw error
       }
       sessionStorage.removeItem(key)
