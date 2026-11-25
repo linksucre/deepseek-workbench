@@ -33,6 +33,7 @@
 | `DEV-002` | Codex | `dev/DEV-002-acceptance-sync` | 基于主工作目录工单，将全部 AC 的可追溯本地证据和待验条件回填根目录验收与入口文档 |
 | `DEV-002` | Codex | `dev/DEV-002-receipts-release-verification` | 独立复跑候选全部本地门禁，合并已验证的 `b132967`，同步同一代码提交的验收证据 |
 | `DEV-002` | Codex | `dev/DEV-002-collaboration-board-sync` | 从 `6aa9aee` 同步主工作目录的任务板快照和候选验收证据，仅修改任务与验收文档 |
+| `DEV-002` | Codex | `dev/DEV-002-portable-review` | 从 `5d63e78` 验证最新候选与保护版 Harness 独立还原，范围为本地评审及部署说明 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
@@ -271,3 +272,5 @@ DEV-010 `9fde880` 修复会话资料读取在 8192 字符边界截断 emoji 的�
 DEV-006 `6aa9aee` 修复任务对话和新结算审阅摘要的 Unicode 字符边界。本地模拟模型配合真实 Host，实测用户消息在 8192 字符边界的 emoji 从截断到完整回显，审阅结果在断开并重启核对后保留同一边界字符。完整 Host、明确拒绝和备份恢复、双版本升级回退、27 项回归、仓库门禁及 actionlint 通过，本地候选已更新。
 
 DEV-002 `5d63e78` 将主工作目录的任务板状态和历史证据归档到本地候选，补齐 `6aa9aee` 的同提交验收记录。27 项回归、差异门禁、actionlint、原生存储及资料、完整 Host 审阅和独立安装的 Chromium 复验通过。候选内的任务板用于交接，主工作目录仍为协作登记入口。空 Git 仓库再次确认固定 Harness 提交在上游返回 `not our ref`，真实模型授权及维护者评审也仍待完成。
+
+DEV-002 `0842987` 记录 `5d63e78` 的本地评审包和独立复验。Workbench 全量 Git bundle、Harness 保护增量 bundle、npm 归档和校验和可从同一评审包取得。空仓库还原 Workbench，独立检出导入两个 Harness 提交并离线构建通过 10 个门禁。复验通过 27 项回归、仓库门禁、真实 Host、拒绝恢复、双版本回退、安装包 Chromium、存储、应用、资料和用量。macOS 系统共享临时目录中的 worktree 隔离未通过，普通用户工作目录通过，限制已记入部署与 M3 评审说明。分页 3000 条全部 60 页通过，首页热读 p95 6.71 ms。
