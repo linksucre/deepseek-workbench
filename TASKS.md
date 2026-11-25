@@ -10,7 +10,7 @@
 | DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | active | 兼容试验、会话绑定、授权及故障恢复 |
 | DEV-005 | NFR-003 | src/storage | DEV-003 | review | 数据域、幂等回执、备份与恢复测试 |
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | active | 用例、冲突控制、接受退回及故障注入测试 |
-| DEV-007 | FR-005 | src/delivery | DEV-004 | active | 原生事件、交付版本与证据校验 |
+| DEV-007 | FR-005 | src/delivery | DEV-004 | review | 原生事件、交付版本与证据校验 |
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | review | 任务界面及两条 M1 验收链路 |
 | DEV-009 | FR-008, NFR-006 | src/usage | DEV-006 | review | 用量归属、缺报、费用估算与对账 |
 | DEV-010 | FR-009 | src/application | DEV-006 | active | 索引及阶段交接 |
@@ -122,3 +122,7 @@ DEV-005 完成 AC-013 的本地保护验证。设计 `2b68695`，Harness 分支 
 保护候选已合入另一 Agent 的 `90fcfc1`，在同一真实 Host 复验创建前强制退出、原生超时和迟到回执、并发提交与接受、损坏防覆盖及备份恢复。25 项工作台回归、仓库门禁、actionlint、存储／应用／用量／资料冒烟和独立安装的 Chromium 验收通过。Apple M1 Max / Node 24.22.3，3000 条任务重开后 50 次热读，每页 50 条，p95 为 6.75 ms。未调用付费模型。
 
 DEV-007 的 `d080fd8` 记录从原生工具结果读取的备选设计。固定版 Bash 进程内有结构化退出状态，持久化元数据目前只有工作目录，不能从输出正文重建可信退出码。该设计作为 `dev/DEV-007-machine-evidence` 的评审参考，继续由已领取分支负责固定产物检查实现。
+
+DEV-007 设计 `9bcb8d3`、实现 `934a3ab` 已进入评审。运行时按部署策略对可信展示中的文件执行非空或 UTF-8 JSON 检查，同次稳定读取核对交付哈希，结果保存在原 Submission 的机器证据字段。无须执行项目脚本或调用模型。已合入 DEV-012 `514756d` 的伪造证据及越权回归，也保留 DEV-008 `09c77eb` 可按条件展开证据的面板。
+
+联调候选 `c3931fe` 通过 26 项回归、相对 main 的仓库门禁、actionlint、真实 Host 授权和交付冒烟以及独立 npm 归档的 Chromium 验收。浏览器覆盖 JSON 失败阻止接受、退回重交、仅确认剩余人工条件、重启后分别查看当前和历史证据。采用 DEV-005 的本地受保护 Harness 基线，发布基线与远端 CI 待评审。
