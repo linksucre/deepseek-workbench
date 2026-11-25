@@ -23,6 +23,7 @@
 
 | 工单 | 负责人 | 分支 | 改动范围 |
 | --- | --- | --- | --- |
+| `DEV-002` | Codex | `dev/DEV-002-integration-gates` | 组合已提交的候选基线，补挂上下文和分页门禁并复跑组合测试 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
