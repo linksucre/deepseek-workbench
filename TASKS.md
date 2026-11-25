@@ -43,6 +43,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-012` | Codex | `dev/DEV-012-real-task-fixtures` | 从 `714357a` 准备 TST-005 的四项本地试跑材料、判定和留证说明，先验证材料可用性 |
+| `DEV-012` | Codex 协作 Agent | `dev/DEV-012-explicit-delivery-verification` | 从 `99f1668` 核对真实宿主按文件选择的成功提交、证据来源及请求重放 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
@@ -55,6 +56,8 @@
 | `DEV-008` | Codex | `dev/DEV-008-execution-choice` | 基于 `41ad708` 补齐既有执行方式契约的组合选择与任务说明，验证 FR-003 交互 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-recovery-browser` | 从 `04ff750` 补验已存在的任务表单及待核对浏览器操作 |
 | `DEV-008` | Codex 协作 Agent | `dev/DEV-008-workspace-selection` | 从 `8ad4e9b` 修复慢请求期间连续切换工作区造成的旧列表与详情，运行 Chromium 红绿复验 |
+| `DEV-008` | Codex 协作 Agent | `dev/DEV-008-lifecycle-browser-verification` | 从 `99f1668` 补验真实浏览器暂停、恢复和取消入口 |
+| `DEV-008` | Codex | `dev/DEV-008-pagination-verification` | 从 `99f1668` 补验 3000 条任务跨页同时间排序、完整遍历及现有阈值 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
