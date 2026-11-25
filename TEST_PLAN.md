@@ -25,7 +25,7 @@ DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path
 - `--review-recovery-regressions=reconcile-receipt` 核对请求摘要、重启重放及无新增写入或模型请求。
 - `--review-recovery-regressions=forward-scope` 等普通消息出现在原生会话历史后回送，并核对两条消息各自的原生请求 ID 与数量。
 
-三项审阅恢复专项均纳入 Harness integration CI。原生测试注入回送已受理后的响应丢失，并用独立 profile 重启核对真实旧事件。Chromium 验证浏览器丢失响应后重新加载并复用原输入。
+三项审阅恢复专项均纳入 Harness integration CI。原生测试在回送受理后注入带同名错误码的普通异常，验证回送保持待核对，重启从原生记录确认受理一次。Chromium 验证浏览器丢失响应后重新加载并复用原输入。
 
 Chromium 在真实 Host 注入入队前明确拒绝，验证页面在原处显示失败并读取新 revision，用户再次点击可用新请求 ID 完成回送。第二次请求由原生受理后截断响应，再重新加载页面，验证核对时仍使用第二次请求的原输入。
 

@@ -775,7 +775,8 @@ hostSmoke: try {
       .update(JSON.stringify([fresh.task.id, review.runId, lost.requestId])).digest('hex')
     await writeFile(forwardFault, nativeId)
     const beforeForward = (await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision
-    assert.equal((await rpc.workbench('task.review.forward', lost, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+    assert.equal((await rpc.workbench('task.review.forward', lost, { status: 409 })).code, 'RECONCILIATION_REQUIRED',
+      'An unstructured error code after admission does not establish native refusal')
     assert.equal((await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision, beforeForward + 1)
     await until(async () => {
       const state = await rpc('session/state', { sessionId: parentId })
