@@ -7,6 +7,7 @@ import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertCollaboratorTools } from './request-tools.mjs'
 
 const checkout = resolve(process.argv[2] ?? '.')
 const patch = fileURLToPath(new URL('../../src/preset/cordis.patch.yml', import.meta.url))
@@ -34,24 +35,37 @@ const provider = createServer(async (request, response) => {
 })
 provider.listen(0, '127.0.0.1')
 await once(provider, 'listening')
-const child = spawn(process.execPath, [
-  '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
-  '--no-open', '--host', '127.0.0.1', '--port', '0',
-], {
-  cwd: checkout,
-  env: {
-    ...process.env,
-    DSH_HOME: join(workspace, 'dsh'),
-    DSH_AGENTS_HOME: join(workspace, 'agents'),
-    DEEPSEEK_API_KEY: 'mock-workbench-key',
-    DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
-  },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-const childClosed = once(child, 'close')
-let output = ''
-for (const stream of [child.stdout, child.stderr]) {
-  stream.on('data', chunk => { output += chunk.toString() })
+let child
+let childClosed
+let output
+
+function startHarness() {
+  child = spawn(process.execPath, [
+    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
+    '--no-open', '--host', '127.0.0.1', '--port', '0',
+  ], {
+    cwd: checkout,
+    env: {
+      ...process.env,
+      DSH_HOME: join(workspace, 'dsh'),
+      DSH_AGENTS_HOME: join(workspace, 'agents'),
+      DEEPSEEK_API_KEY: 'mock-workbench-key',
+      DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  childClosed = once(child, 'close')
+  output = ''
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.on('data', chunk => { output += chunk.toString() })
+  }
+}
+
+async function stopHarness() {
+  if (child === undefined) return
+  child.kill()
+  await childClosed
+  child = undefined
 }
 
 async function until(read, description, timeout = 25_000) {
@@ -65,7 +79,7 @@ async function until(read, description, timeout = 25_000) {
   throw new Error(`Timed out waiting for ${description}`)
 }
 
-try {
+async function connectHarness() {
   const launchUrl = await until(() => /dsh web: (http:\/\/[^\s]+)/.exec(output)?.[1], 'Web startup', 60_000)
   const origin = new URL(launchUrl).origin
   assert.equal((await fetch(origin)).status, 401)
@@ -75,18 +89,24 @@ try {
   const landing = await fetch(origin, { headers: { cookie } })
   assert.equal(landing.status, 200)
 
-  async function rpc(method, request) {
+  return async function rpc(method, request) {
     const response = await fetch(`${origin}/api/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', cookie },
       signal: AbortSignal.timeout(15_000),
-      body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method, payload: { args: { request } } }),
+      body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method, payload: { args: method === 'session/list' ? { _request: request } : { request } } }),
     })
     assert.equal(response.status, 200, method)
     const { result } = await response.json()
     assert.equal(result.ok, true, `${method}: ${JSON.stringify(result.error)}`)
     return result.value
   }
+
+}
+
+try {
+  startHarness()
+  let rpc = await connectHarness()
 
   async function requestTurn(options, prompt) {
     const session = await rpc('session/create', { cwd: workspace, ...options })
@@ -103,16 +123,38 @@ try {
   assert.equal(task.session.agentPreset, 'task-collaborator')
   assert.match(JSON.stringify(task.modelRequest.system), /You are my task collaborator/)
   assert.match(JSON.stringify(task.modelRequest.system), /Choose the workflow for each phase/)
-  assert.ok(task.modelRequest.tools.some(tool => tool.name === 'present'), 'present is available')
+  assertCollaboratorTools(task.modelRequest)
 
   const standard = await requestTurn({}, 'Smoke: confirm the default preset remains standard')
   assert.equal(standard.session.agentPreset, 'standard')
   assert.doesNotMatch(JSON.stringify(standard.modelRequest.system), /You are my task collaborator/)
-  console.log('PASS: Web startup, collaborator preset, prompt injection, present tool, and standard preset isolation.')
+  console.log('PASS: Web startup, collaborator preset, prompt injection, file/research/skill/present tools, and standard preset isolation.')
+
+  // Construct the durable state of a crash between creation and attachment.
+  // cwd-only creation intentionally omits the workspace side effect.
+  const { workspace: registered } = await rpc('workspace/create', { path: workspace })
+  const reservedId = `session-${randomUUID()}`
+  const orphan = await rpc('session/create', { cwd: workspace, sessionId: reservedId })
+  assert.equal(orphan.sessionId, reservedId)
+
+  await stopHarness()
+  startHarness()
+  rpc = await connectHarness()
+  const { workspace: recovered } = await rpc('workspace/create', { path: workspace })
+  assert.equal(recovered.workspaceId, registered.workspaceId)
+  assert.ok(!recovered.sessionIds.includes(reservedId), 'reserved session survived without membership')
+  const { items } = await rpc('session/list', {})
+  assert.ok(items.some(item => item.sessionId === reservedId), 'reserved session survives restart')
+
+  const retry = await rpc('session/create', { workspaceId: recovered.workspaceId, sessionId: reservedId })
+  assert.notEqual(retry.sessionId, reservedId, 'recreating an unattached named session mints a replacement')
+  const { workspace: afterRetry } = await rpc('workspace/create', { path: workspace })
+  assert.ok(afterRetry.sessionIds.includes(retry.sessionId))
+  assert.ok(!afterRetry.sessionIds.includes(reservedId))
+  console.log('PASS: restart preserves an unattached session; blind workspace-create retry mints a replacement.')
 } finally {
-  child.kill()
+  await stopHarness()
   provider.closeAllConnections()
   provider.close()
-  await childClosed
   await rm(workspace, { recursive: true, force: true })
 }
