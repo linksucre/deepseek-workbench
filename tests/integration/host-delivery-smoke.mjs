@@ -738,7 +738,11 @@ hostSmoke: try {
     assert.equal(await nativeCount(refused.requestId), 0)
     const afterRefusal = await rpc.workbench('task.get', { taskId })
     await stop()
-    rpc = await start({ WORKBENCH_TEST_FAIL_ATTACH: 'lost-receipt' })
+    const storedPath = join(data, 'storages', 'workbench_tasks', 'tasks', `${taskId}.json`)
+    const sourceRecord = await readFile(storedPath)
+    const refusalBackup = join(root, 'refused-forward-backup')
+    await cp(data, refusalBackup, { recursive: true })
+    rpc = await start({}, { dataHome: refusalBackup })
     assert.deepEqual(await rpc.workbench('task.review.forward', refused, refusalStatus), refusal)
     const changed = await rpc.workbench('task.review.forward', {
       ...refused, expectedRevision: afterRefusal.task.revision,
@@ -759,7 +763,8 @@ hostSmoke: try {
     assert.deepEqual(await rpc.workbench('task.review.forward', retry), { sessionId: parentId, accepted: true })
     await until(async () => await nativeCount(retry.requestId) === 1, 'one admission from the new forward')
     assert.equal(await nativeCount(refused.requestId), 0)
-    console.log('PASS: confirmed pre-admission refusal permits lifecycle actions and a fresh forward after restart.')
+    assert.deepEqual(await readFile(storedPath), sourceRecord)
+    console.log('PASS: restored refusal receipt permits lifecycle actions and a fresh forward without writing to the source profile.')
     break hostSmoke
   }
   if (selectedProbes.includes('forward-scope')) {

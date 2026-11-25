@@ -160,7 +160,36 @@ try {
   })
   await useStorage(backup, async repo => assert.deepEqual(await repo.exportSnapshot(), exported))
   assert.equal(await readFile(recordPath(damagedAfterOpen), 'utf8'), damagedContents)
+
+  const snapshotStore = join(temp, 'snapshot-order')
+  const snapshotBackup = join(temp, 'snapshot-order-backup')
+  const secondDraft = structuredClone(draft)
+  secondDraft.task.id = '01882e02-360d-4d75-bee7-4b8b0dd34b2b'
+  let snapshot
+  await useStorage(snapshotStore, async repo => {
+    const [, before, , , after] = await Promise.all([
+      repo.create(draft, request('create')),
+      repo.exportSnapshot(),
+      repo.commit(id, { request: request('ready'), expectedRevision: 0 }, ready),
+      repo.create(secondDraft, request('create-second')),
+      repo.exportSnapshot(),
+    ])
+    assert.deepEqual(before.map(({ key }) => key), [id])
+    assert.deepEqual(before[0].record.detail, draft)
+    assert.deepEqual(before[0].record.operations.map(entry => entry.requestId), ['create'])
+    assert.deepEqual(after.map(({ key }) => key), [secondDraft.task.id, id])
+    assert.deepEqual(after[0].record.detail, secondDraft)
+    assert.equal(after[1].record.detail.task.revision, 1)
+    assert.deepEqual(after[1].record.operations.map(entry => entry.requestId), ['create', 'ready'])
+    assert.deepEqual(after[1].record.operations[1].result, after[1].record.detail)
+    snapshot = structuredClone(after)
+    after[1].record.detail.task.title = 'Changed in the exported copy'
+    assert.deepEqual(await repo.exportSnapshot(), snapshot)
+  })
+  await cp(snapshotStore, snapshotBackup, { recursive: true })
+  await useStorage(snapshotBackup, async repo => assert.deepEqual(await repo.exportSnapshot(), snapshot))
   console.log('PASS: native storage revision and replay, legacy V1 migration, rejection of unreadable and damaged records, and clean backup recovery with retry.')
+  console.log('PASS: multi-task snapshots follow write queue order, retain matching receipts, and survive backup reopen.')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }

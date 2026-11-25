@@ -23,3 +23,5 @@ M1 使用宿主 `storageDomain` 的业务侧存储。逻辑域为 `workbench_tas
 完整恢复使用停写后的独立 profile 副本，以便任务记录、原生会话及回执同步回到同一时点。复制命令和复核步骤见 [部署手册](docs/DEPLOYMENT.md#备份和恢复独立-profile)。
 
 存储适配器 `exportSnapshot()` 在当前仓库写入队列内生成按 task key 排序的业务快照，每项含 `key` 和 `record`。记录含任务详情、启动意图、阶段、审阅和操作回执。该接口用于仓库备份一致性测试和本地维护开发，当前 Web 操作索引没有用户调用的业务导出命令。通过 `node tests/integration/storage-smoke.mjs /path/to/built/deepseek-harness` 可在生成的样本和恢复副本上验证快照一致性。涉及实际 profile 时，资料范围和脱敏由授权维护者确认，物理恢复沿用完整 profile 副本。
+
+TST-007 在原生 JSON 后端把快照穿插在两个任务的排队写入之间，核对快照包含的任务、版本和同次写入的回执。修改导出的副本不影响库内记录，停止写入后从独立备份重新打开可得到同一快照。
