@@ -40,6 +40,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
+| `DEV-011` | Codex | `dev/DEV-011-review-recovery-regression` | 在候选上封装冷根及两个回执问题的真实 Host 回归，只改测试和评审说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
