@@ -24,6 +24,7 @@
 | 工单 | 负责人 | 分支 | 改动范围 |
 | --- | --- | --- | --- |
 | `DEV-002` | Codex | `dev/DEV-002-integration-gates` | 组合已提交的候选基线，补挂上下文和分页门禁并复跑组合测试 |
+| `DEV-002` | Codex | `dev/DEV-002-worktree-gate` | 基于 `609c98c` 将 DEV-011 的固定 Host 写隔离试验接入 CI |
 | `DEV-002` | Codex | `dev/DEV-002-candidate-verification` | 基于 `41ad708` 将已提交的原生 worktree 隔离试验接入候选 CI，复跑组合门禁并记录发布依赖 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
@@ -46,6 +47,7 @@
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
 | `DEV-010` | Codex | `dev/DEV-010-workbench-context` | 基于 `41ad708` 接入只读资料索引、按需预览和阶段交接，保留原资料适配分支 |
+| `DEV-010` | Codex 协作 Agent | `dev/DEV-010-context-verification` | 从 `cf9066b` 独立核验既有原生上下文读取及工作区变化时的拒绝行为，覆盖 TST-011 |
 
 DEV-010 提交 `a82eab1`，应用入口生成带工作区与观测日期的授权来源索引、过期提示及最近阶段交接。按需加载重查来源授权和 revision。15 项测试与原生存储重开通过；正式 Host 来源适配器及界面入口待联调。
 
