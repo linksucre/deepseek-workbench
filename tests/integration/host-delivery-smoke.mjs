@@ -40,7 +40,8 @@ const provider = createServer(async (request, response) => {
     for await (const chunk of request) chunks.push(chunk)
     const body = JSON.parse(Buffer.concat(chunks).toString())
     allModelRequests += 1
-    const review = JSON.stringify(body.messages).includes('review isolation probe')
+    const messages = JSON.stringify(body.messages)
+    const review = messages.includes('review isolation probe')
     if (review) {
       reviewRequest = body
       await reviewGate
@@ -58,6 +59,7 @@ const provider = createServer(async (request, response) => {
         .find(block => block.type === 'tool_result' && block.tool_use_id === forgedToolId)
       await forgedGate
     }
+    const omitCacheUsage = step === 6 || messages.includes('review recovery probe')
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
     const manualPresentation = !concurrentPresentation && body.tools?.some(tool => tool.name === 'present') &&
@@ -73,7 +75,7 @@ const provider = createServer(async (request, response) => {
       : filename ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
-      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(step !== 6 && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
+      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(!omitCacheUsage && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (name) {
       events.push(
@@ -416,12 +418,19 @@ try {
     requestId: 'parent-history', text: 'parent-only history marker' })
   await until(async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
-  const reviewInput = { taskId: fresh.task.id, expectedRevision: freshActive.task.revision, requestId: 'review',
+  const reviewParent = await rpc.workbench('task.get', { taskId: fresh.task.id })
+  assert.deepEqual(reviewParent.runs[0].childSessionIds, [])
+  assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
+  const beforeDenied = allModelRequests
+  const reviewInput = { taskId: fresh.task.id, expectedRevision: reviewParent.task.revision, requestId: 'review',
     instruction: 'Check the selected brief', material: 'review isolation probe' }
   await rpc.workbench('task.delegate', reviewInput, { anonymous: true, status: 401 })
   await rpc.workbench('task.delegate', { ...reviewInput, taskId: randomUUID() }, { status: 404 })
   await rpc.workbench('task.delegate', { ...reviewInput, material: '材'.repeat(9000) }, { status: 400 })
   await rpc.workbench('task.delegate', { ...reviewInput, childSessionId: parentId }, { status: 400 })
+  assert.equal(allModelRequests, beforeDenied)
+  assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
+  assert.equal((await rpc.workbench('task.get', { taskId: fresh.task.id })).task.revision, reviewParent.task.revision)
   const beforeReview = await rpc.workbench('task.usage', { taskId: fresh.task.id })
   const reviewing = rpc.workbench('task.delegate', reviewInput)
   let reserved
@@ -459,12 +468,16 @@ try {
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
   await until(async () => {
     const state = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 30 })
-    return !state.running && state.messages.some(message => message.role === 'user' && message.text.includes('independent review'))
+    return !state.running && state.messages.some(message => message.role === 'user' &&
+      message.text.includes(review.reviewId) && message.text.includes('advisory data') &&
+      message.text.includes('independent review'))
   }, 'owner forwarded the review into the root conversation')
 
   const beforeForwardReplay = allModelRequests
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
   assert.equal(allModelRequests, beforeForwardReplay)
+  const beforeRecoveryUsage = await rpc.workbench('task.usage', { taskId: fresh.task.id })
+  assert.equal(beforeRecoveryUsage.completeness, 'complete')
   const recoveryInput = { ...reviewInput, expectedRevision: reviewedTask.task.revision,
     requestId: 'lost-review-receipt', material: 'review recovery probe' }
   await rpc.workbench('task.delegate', recoveryInput, { status: 503 })
@@ -486,6 +499,12 @@ try {
   assert.deepEqual(await rpc.workbench('task.review.reconcile', reconcile), recovered)
   const resumedTask = await rpc.workbench('task.get', { taskId: fresh.task.id })
   assert.deepEqual(resumedTask.runs[0].childSessionIds, [review.childSessionId, recovered.childSessionId])
+  const recoveredUsage = await rpc.workbench('task.usage', { taskId: fresh.task.id })
+  assert.equal(recoveredUsage.completeness, 'partial')
+  assert.equal(recoveredUsage.estimatedCost, null)
+  assert.match(recoveredUsage.coverageNotes.join(' '), /1 attempt\(s\) have missing or ambiguous token counts/)
+  assert.equal(recoveredUsage.buckets[0].uncachedInput, beforeRecoveryUsage.buckets[0].uncachedInput + 4)
+  assert.equal(recoveredUsage.buckets[0].output, beforeRecoveryUsage.buckets[0].output + 1)
   assert.deepEqual(await rpc.workbench('task.delegate', reviewInput), review)
   await rpc.workbench('task.delegate', { ...reviewInput, material: 'different' }, { status: 400 })
   await rpc.workbench('task.delegate', { ...reviewInput, expectedRevision: resumedTask.task.revision,
