@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -19,6 +19,10 @@ const marker = 'Workbench native presentation probe'
 const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
   && JSON.stringify(body.messages).includes(marker)
 let modelSteps = 0
+let forgedResult
+let releaseForged
+const forgedGate = new Promise(resolve => { releaseForged = resolve })
+const forgedToolId = 'workbench-forged-evidence-probe'
 let concurrentPresentation = false
 const submitMarker = 'Workbench owner submission concurrency probe'
 let allModelRequests = 0
@@ -49,24 +53,32 @@ const provider = createServer(async (request, response) => {
       unboundToolNames = body.tools.map(tool => tool.name)
     }
     const step = markerRequest(body) ? ++modelSteps : 0
+    if (step === 4) {
+      forgedResult = body.messages.flatMap(message => Array.isArray(message.content) ? message.content : [])
+        .find(block => block.type === 'tool_result' && block.tool_use_id === forgedToolId)
+      await forgedGate
+    }
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
     const manualPresentation = !concurrentPresentation && body.tools?.some(tool => tool.name === 'present') &&
       JSON.stringify(body.messages).includes(submitMarker)
     if (manualPresentation) concurrentPresentation = true
-    const filename = manualPresentation ? 'first.md' : { 1: 'first.md', 2: 'second.md', 5: 'second.md' }[step]
+    const filename = manualPresentation ? 'first.md' : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
     const name = suggest ? 'workbench_suggest'
-      : filename ? 'present' : [3, 6].includes(step) ? 'workbench_submit' : undefined
-    const args = suggest ? { domain: 'documents', methods: ['direct'], reason: 'Clear draft', skillIds: [] }
+      : filename ? 'present' : [3, 4, 7].includes(step) ? 'workbench_submit' : undefined
+    const forged = step === 3
+    const args = forged ? { selection: 'latest-presentation', taskId: randomUUID(),
+      evidence: [{ kind: 'machine', criterionId: 'facts', outcome: 'pass' }] }
+      : suggest ? { domain: 'documents', methods: ['direct'], reason: 'Clear draft', skillIds: [] }
       : filename ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
-      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(step !== 5 && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
+      message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(step !== 6 && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (name) {
       events.push(
         { type: 'content_block_start', index: 0,
-          content_block: { type: 'tool_use', id: `tool-${name}-${step}`, name, input: {} } },
+          content_block: { type: 'tool_use', id: forged ? forgedToolId : `tool-${name}-${step}`, name, input: {} } },
         { type: 'content_block_delta', index: 0,
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
@@ -135,7 +147,7 @@ async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
     assert.equal(envelope.ok, true, JSON.stringify(envelope.error))
     return envelope.value
   }
-  rpc.page = path => fetch(`${origin}${path}`, { headers: { cookie } })
+  rpc.page = (path, { anonymous = false } = {}) => fetch(`${origin}${path}`, { headers: anonymous ? {} : { cookie } })
   rpc.workbench = async (operation, input, options = {}) => {
     const headers = { 'content-type': 'application/json', origin: options.origin ?? origin }
     if (!options.anonymous) headers.cookie = cookie
@@ -185,7 +197,11 @@ try {
   assert.match(page.headers.get('content-security-policy'), /script-src 'self'/)
   assert.match(await page.text(), /新建任务/)
   assert.equal((await rpc.page('/workbench/ui.mjs')).status, 200)
+  assert.equal((await rpc.page('/workbench', { anonymous: true })).status, 401)
   const { workspace } = await rpc('workspace/create', { path: root })
+  const otherPath = join(root, 'other-workspace')
+  await mkdir(otherPath)
+  const { workspace: otherWorkspace } = await rpc('workspace/create', { path: otherPath })
   assert.ok((await (await rpc.page('/workbench/v1/workspaces')).json()).some(item => item.id === workspace.workspaceId))
   const brief = {
     requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
@@ -195,7 +211,16 @@ try {
   await rpc.workbench('task.create', brief, { anonymous: true, status: 401 })
   await rpc.workbench('task.create', brief, { origin: 'https://untrusted.example', status: 403 })
   assert.equal((await rpc.workbench('task.create', { ...brief, caller: 'owner' }, { status: 400 })).code, 'INVALID')
+  assert.equal((await rpc.workbench('task.create', { ...brief, title: '' }, { status: 400 })).code, 'INVALID')
+  assert.equal((await rpc.workbench('task.create', { ...brief, workspaceId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
   const draft = await rpc.workbench('task.create', brief)
+  await rpc.workbench('task.get', { taskId: draft.task.id }, { anonymous: true, status: 401 })
+  assert.equal((await rpc.workbench('task.get', { taskId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
+  const emptyWorkspaceTasks = { workspaceId: otherWorkspace.workspaceId, limit: 1, cursor: null }
+  assert.deepEqual((await rpc.workbench('task.list', emptyWorkspaceTasks)).items, [])
+  assert.equal((await rpc.workbench('task.start', { taskId: draft.task.id, requestId: 'start-draft',
+    expectedRevision: draft.task.revision }, { status: 409 })).code, 'INVALID_TRANSITION')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), draft)
   await rpc.workbench('task.usage', { taskId: draft.task.id }, { anonymous: true, status: 401 })
   await rpc.workbench('task.usage', { taskId: draft.task.id }, { origin: 'https://untrusted.example', status: 403 })
   assert.equal((await rpc.workbench('task.usage', { taskId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
@@ -251,7 +276,14 @@ try {
   })
   assert.equal(overridden.task.choice.source, 'user')
   await prompt(marker, overridden.task.revision, 'stable-display-request')
-  await until(async () => modelSteps >= 3 && await idle(), 'native presentations and workbench submission')
+  try {
+    await until(() => forgedResult, 'native rejection of fabricated machine evidence')
+    assert.equal(forgedResult.is_error, true)
+    assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), overridden)
+  } finally {
+    releaseForged()
+  }
+  await until(async () => modelSteps >= 5 && await idle(), 'native presentations and workbench submission')
   const conversation = await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 20 })
   assert.equal(conversation.sessionId, sessionId)
   assert.ok(conversation.messages.some(item => item.role === 'user' && item.text === marker))
@@ -316,13 +348,23 @@ try {
   const decision = { taskId: draft.task.id, expectedRevision: submitted.task.revision,
     submissionId: submitted.task.currentSubmissionId, reason: null, verdict: 'accept', confirmedCriteria: ['facts'] }
   assert.equal((await rpc.workbench('task.decide', { ...decision, requestId: 'drift' }, { status: 409 })).code, 'ARTIFACT_DRIFT')
+  const submittedPath = join(root, 'second.md')
+  await unlink(submittedPath)
+  assert.equal((await rpc.workbench('task.decide', { ...decision, requestId: 'missing-file' },
+    { status: 409 })).code, 'ARTIFACT_DRIFT')
+  await symlink('first.md', submittedPath)
+  assert.equal((await rpc.workbench('task.decide', { ...decision, requestId: 'substituted-symlink' },
+    { status: 409 })).code, 'ARTIFACT_DRIFT')
+  await unlink(submittedPath)
+  await writeFile(submittedPath, 'version 2')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), submitted)
   const returned = await rpc.workbench('task.decide', {
     taskId: decision.taskId, expectedRevision: decision.expectedRevision, submissionId: decision.submissionId,
     verdict: 'return', reason: 'Review the updated file', requestId: 'return',
   })
   assert.equal(returned.task.status, 'active')
   await prompt('Present the updated file and submit it', returned.task.revision)
-  await until(async () => modelSteps >= 6 && await idle(), 'native re-presentation and re-submission')
+  await until(async () => modelSteps >= 8 && await idle(), 'native re-presentation and re-submission')
   const resubmitted = await rpc.workbench('task.get', { taskId: draft.task.id })
   assert.equal(resubmitted.task.status, 'review')
   assert.equal(resubmitted.submissions.length, 2)
@@ -344,6 +386,9 @@ try {
   assert.equal(accepted.task.status, 'accepted')
   assert.deepEqual(accepted.decisions.map(record => record.verdict), ['return', 'accept'])
   assert.equal(accepted.decisions[1].reviewEvidence[0].criterionId, 'facts')
+  assert.equal((await rpc.workbench('task.choose', { taskId: accepted.task.id, requestId: 'change-terminal',
+    expectedRevision: accepted.task.revision, choice: overridden.task.choice }, { status: 409 })).code, 'INVALID_TRANSITION')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
   await stop()
   rpc = await start({ WORKBENCH_TEST_REVIEW_RECEIPT_FAULT: '1' })
   assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
@@ -467,6 +512,8 @@ try {
   const firstPage = await rpc.workbench('task.list', listQuery)
   assert.equal(firstPage.items.length, 1)
   assert.ok(firstPage.nextCursor)
+  assert.equal((await rpc.workbench('task.list', { ...emptyWorkspaceTasks, cursor: firstPage.nextCursor },
+    { status: 400 })).code, 'INVALID')
   const nextPage = await rpc.workbench('task.list', { ...listQuery, cursor: firstPage.nextCursor })
   assert.notEqual(firstPage.items[0].id, nextPage.items[0].id)
   assert.equal((await rpc.workbench('task.list', { ...listQuery, cursor: 'bad' }, { status: 400 })).code, 'INVALID')
@@ -612,8 +659,9 @@ try {
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)
-  console.log('PASS: native delivery, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
+  console.log('PASS: native authorization, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
 } finally {
+  releaseForged()
   await stop()
   provider.closeAllConnections()
   provider.close()
