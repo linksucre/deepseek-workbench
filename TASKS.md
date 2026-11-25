@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | DEV-001 | FR-001 | src/preset | — | done | 预设及模拟模型集成通过，逐项验证预设必需工具 |
 | DEV-002 | NFR-005 | scripts、contracts、docs、.github | — | done | 需求追踪、契约元模式、负例回归与受保护 PR 流程 |
-| DEV-003 | FR-002 | src/domain | DEV-002 | planned | 纯状态机、领域测试与契约校验 |
+| DEV-003 | FR-002 | src/domain | DEV-002 | review | 纯状态机与领域回归通过，待 API 集成复验 |
 | DEV-004 | FR-004, NFR-002 | src/harness | DEV-003 | planned | 兼容试验、会话绑定、授权及故障恢复 |
 | DEV-005 | NFR-003 | src/storage | DEV-003 | planned | 数据域、幂等回执、备份与恢复测试 |
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | planned | 用例、冲突控制、接受退回及故障注入测试 |

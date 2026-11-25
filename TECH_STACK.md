@@ -4,7 +4,7 @@
 | --- | --- |
 | 基线 | Node 24.22.3、DeepSeek Harness 0.2.3-alpha.2、固定上游提交，见 [基线](harness-baseline.json) |
 | 插件加载 | Cordis bundle + profile patch，托管于 Harness Web |
-| 领域与适配 | TypeScript ESM。首个编译实现工单引入锁文件和构建配置，类型与校验器来自契约 |
+| 领域与适配 | DEV-003 的纯领域模块使用无构建步骤的 ESM JavaScript。生产类型计划使用 TypeScript ESM。首个编译实现工单引入锁文件和构建配置，类型与校验器来自契约 |
 | 公共契约 | JSON Schema 2020-12 + 操作索引，统一 ID、字段、错误和成功输出 |
 | 存储 | Harness storage domain，按 Task 聚合，单宿主写入。物理后端由部署配置可用的原生后端决定 |
 | UI | Harness 的 Web 扩展入口与现有组件模式。先验证可用槽位及打包约束 |
