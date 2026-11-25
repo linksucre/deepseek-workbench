@@ -7,11 +7,12 @@ import { pathToFileURL } from 'node:url'
 import Ajv2020 from 'ajv/dist/2020.js'
 import { openTaskRepository } from '../../src/storage/task-repository.mjs'
 
-export async function nativeStorageFixture(path) {
+export async function nativeStorageFixture(path, { expectedCommit } = {}) {
   const checkout = resolve(path)
   const loadJson = async url => JSON.parse(await readFile(url, 'utf8'))
   const baseline = await loadJson(new URL('../../harness-baseline.json', import.meta.url))
-  assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
+  assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(),
+    expectedCommit ?? baseline.commit)
   const resolveHost = createRequire(join(checkout, 'packages/storage/storage-domain/package.json'))
   const importHost = (name, resolver = resolveHost) => import(pathToFileURL(resolver.resolve(name)).href)
   const { Context } = await importHost('@deepseek-ai/cordis')

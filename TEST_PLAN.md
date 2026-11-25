@@ -41,4 +41,6 @@ Chromium 在真实 Host 注入入队前明确拒绝，验证页面在原处显�
 
 入队前拒绝回归在 CI 使用独立参数 `--review-recovery-regressions=forward-pre-admission`。测试在真实 Host 的原生提示入口、入队调用前注入带 `session/not-found` 的结构化拒绝。核对原始原生请求 ID 无消息、无模型调用，重启后重放同一公开请求取得相同失败且 revision 保持稳定，修改输入重放返回 `INVALID`，随后能暂停、恢复并用新请求 ID 回送一次。
 
+TST-007 更换 Harness 时，在已安装依赖的 Workbench 检出运行 `node tests/integration/storage-harness-upgrade.mjs <old-checkout> <old-sha> <new-checkout> <new-sha>`。两个 Harness 检出须先构建，并提供各自的完整提交 ID。旧后端写入临时任务和回执，停写后复制升级和回退两份。新后端核对旧数据、原字节、原样重放与输入冲突，再更新一次并冷读。旧后端从独立备份回退，验证原记录及回执，同时核对升级副本与旧来源各自的文件字节。
+
 TST-010 双版本 profile 验证使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-profile-upgrade-from=/path/to/legacy-workbench`。两个已安装依赖的 Workbench 检出应固定同一个 Harness 版本，旧检出须支持旧版审阅回送，例如 `8fde87b`。脚本用模拟模型和临时 profile 让旧插件实际写入回送及普通消息，再以新插件升级同一 profile。核对旧请求重放、冲突识别和新请求的单次受理，并用停写备份的副本启动旧插件，确认回退后的记录与回执，以及升级副本仍能冷重放新请求。该命令单独运行。
