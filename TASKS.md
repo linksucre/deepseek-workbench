@@ -26,6 +26,8 @@
 | `DEV-002` | Codex | `dev/DEV-002-integration-gates` | 组合已提交的候选基线，补挂上下文和分页门禁并复跑组合测试 |
 | `DEV-002` | Codex | `dev/DEV-002-worktree-gate` | 基于 `609c98c` 固化 worktree CI 门禁 `c9b8af6` 并独立复验 `28c773e` |
 | `DEV-002` | Codex | `dev/DEV-002-candidate-verification` | 组合 DEV-008 交互、DEV-010 与 DEV-011 回归和原生 worktree 门禁，复跑候选并记录发布依赖 |
+| `DEV-002` | Codex 协作 Agent | `dev/DEV-002-m3-combined-verification` | 基于 `9379bdf` 组合候选现有资料修补、储存、审阅边界和浏览器恢复测试，验证独立归档 |
+| `DEV-002` | Codex | `dev/DEV-002-release-review` | 基于 `97af999` 汇集待评审设计、Harness 上游差异和发布验收入口，只改评审文档 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
@@ -43,6 +45,7 @@
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
+| `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-timeout-verification` | 从 `97af999` 补验 TST-010 审阅超时、资源清理和并发插槽释放 |
 | `DEV-011` | Codex | `dev/DEV-011-review-recovery-regression` | 在候选上封装冷根及两个回执问题的真实 Host 回归，只改测试和评审说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
