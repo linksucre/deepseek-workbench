@@ -12,7 +12,7 @@
 | DEV-006 | FR-003, FR-006, NFR-001 | src/application | DEV-003, DEV-004, DEV-005, DEV-007 | active | 用例、冲突控制、接受退回及故障注入测试 |
 | DEV-007 | FR-005 | src/delivery | DEV-004 | active | 原生事件、交付版本与证据校验 |
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | planned | 任务界面及两条 M1 验收链路 |
-| DEV-009 | FR-008, NFR-006 | src/usage | DEV-006 | planned | 用量归属、缺报、费用估算与对账 |
+| DEV-009 | FR-008, NFR-006 | src/usage | DEV-006 | active | 用量归属、缺报、费用估算与对账 |
 | DEV-010 | FR-009 | src/application | DEV-006 | planned | 索引及阶段交接 |
 | DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | planned | 有限委派与冲突隔离验证 |
 | DEV-012 | — | tests/integration | DEV-006 | active | M1 跨模块联调，先完成恢复、原生展示到提交、漂移退回及重交接受 |
@@ -28,6 +28,7 @@
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-006` | Codex | `dev/DEV-006-application` | 应用服务、存储与交付接入；DEV-004 继续持有原生恢复 |
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
+| `DEV-009` | Codex | `dev/DEV-009-native-usage` | 用量模块与 TST-006，先做独立 Host 数据源核验 |
 
 DEV-005 提交 `d139fe0`，原生 JSON 后端已验证启动意图持久化、revision 竞争、幂等重放、关闭重开与备份恢复。工作台 Host 集成和迁移仍待验证。DEV-004 可通过 `src/storage/task-repository.mjs` 的 commit 在单键更新中保存或清除 pendingIntent；跨模块接口由 DEV-006 接入。
 
