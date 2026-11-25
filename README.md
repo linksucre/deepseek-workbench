@@ -14,4 +14,6 @@
 | 6 质量门禁 | [TEST_PLAN](TEST_PLAN.md) · [ACCEPTANCE](ACCEPTANCE.md) |
 | 7 维护与部署 | [ADR 索引](docs/adr/README.md) · [CHANGELOG](CHANGELOG.md) · [DEPLOYMENT](docs/DEPLOYMENT.md) |
 
-在根目录运行 `npm run check`。预设集成测试需要一个已构建的 Harness 基线工作树，运行 `npm run test:smoke -- /path/to/built/deepseek-harness`。本地启动见部署文档。
+在根目录运行 `npm ci` 安装门禁依赖，再运行 `npm run check`。预设集成测试需要一个已构建的 Harness 基线工作树，运行 `npm run test:smoke -- /path/to/built/deepseek-harness`。本地启动见部署文档。
+
+下一轮设计评审见 [M1 会话恢复与交付提交](docs/design/M1-RECOVERY-AND-SUBMISSION.md)。

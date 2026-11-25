@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { verifySchemaMeta } from './schema-meta.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const read = file => readFileSync(join(root, file), 'utf8')
@@ -66,6 +67,7 @@ function checkDependencies(id, ancestors = []) {
 for (const id of tasks) checkDependencies(id)
 
 const schema = json('contracts/v1/schemas.json')
+verifySchemaMeta(schema)
 const operations = json('contracts/v1/operations.json')
 assert.equal(operations.version, 1)
 assert.ok(Object.hasOwn(schema.$defs, operations.error))
