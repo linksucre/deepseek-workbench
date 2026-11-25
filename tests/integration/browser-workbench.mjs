@@ -128,22 +128,55 @@ try {
   }
   const button = name => page.getByRole('button', { name, exact: true })
   await openWorkbench(await start())
-  await button('添加工作区').first().click()
-  await page.getByLabel('本机目录的绝对路径').fill(workspace)
-  await button('添加').click()
+  async function tabTo(target) {
+    await target.waitFor()
+    for (let step = 0; step < 50; step++) {
+      if (await target.evaluate(element => element === document.activeElement)) return
+      await page.keyboard.press('Tab')
+    }
+    assert.fail(`Keyboard could not reach ${await target.innerText()}`)
+  }
+  async function activate(target, key = 'Enter') {
+    await tabTo(target)
+    await page.keyboard.press(key)
+  }
+  await activate(button('添加工作区').first())
+  const directory = page.getByLabel('本机目录的绝对路径')
+  await directory.waitFor()
+  assert.equal(await directory.evaluate(element => element === document.activeElement), true)
+  await page.keyboard.insertText(workspace)
+  await activate(button('添加'))
   await page.getByRole('heading', { name: '还没有任务' }).waitFor()
 
-  async function create(title, template) {
-    await button('新建任务').first().click()
+  const newTask = button('新建任务').first()
+  await activate(newTask)
+  await page.getByRole('dialog').waitFor()
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  assert.equal(await newTask.evaluate(element => element === document.activeElement), true)
+
+  const goalStart = '材料检索与核验\n<review>'
+  const goalEnd = '</review>'
+  const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
+  async function create(title, template, goal = '交付并核查该工作') {
+    await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
-    await page.getByLabel('标题').fill(title)
-    await page.getByLabel('目标').fill('交付并核查该工作')
-    await button('保存任务').click()
+    await tabTo(page.getByLabel('标题'))
+    await page.keyboard.insertText(title)
+    await tabTo(page.getByLabel('目标'))
+    await page.keyboard.insertText(goal)
+    await activate(button('保存任务'))
     await page.getByRole('heading', { name: title }).waitFor()
-    await button('标为就绪').click()
-    await button('启动 Agent 会话').click()
-    await button('填入任务说明').click()
-    await button('发送').click()
+    await activate(button('标为就绪'))
+    await activate(button('启动 Agent 会话'))
+    const conversation = page.getByRole('region', { name: '执行会话' })
+    await activate(page.getByRole('link', { name: '查看执行会话' }))
+    assert.equal(await conversation.evaluate(element => element === document.activeElement), true)
+    await activate(button('填入任务说明'))
+    const prompt = page.getByLabel('发给 Agent')
+    assert.equal(await prompt.evaluate(element => element === document.activeElement), true)
+    assert.ok((await prompt.inputValue()).includes(goal))
+    await activate(button('发送'))
   }
   async function waitReview() {
     const deadline = Date.now() + 20_000
@@ -155,8 +188,12 @@ try {
     throw new Error(`Submission did not reach review\n${await page.locator('main').innerText()}`)
   }
   async function accept() {
-    for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check()
-    await button('接受提交').click()
+    assert.equal(await button('接受提交').isDisabled(), true)
+    for (const checkbox of await page.getByRole('checkbox').all()) {
+      await activate(checkbox, 'Space')
+      assert.equal(await checkbox.isChecked(), true)
+    }
+    await activate(button('接受提交'))
   }
   await create('browser code task', 'development')
   await waitReview()
@@ -168,18 +205,22 @@ try {
   await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
   await page.getByText(/估算费用：CNY 0\./).waitFor()
 
-  await create('browser material task', 'documents')
+  await create('browser material task', 'documents', longGoal)
   await waitReview()
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
   await openWorkbench(await start())
-  await page.getByRole('button', { name: /browser material task/ }).click()
+  await activate(page.getByRole('button', { name: /browser material task/ }))
   await waitReview()
   await accept()
   await page.locator('#feedback[data-error]').waitFor()
-  assert.match(await page.locator('#feedback').innerText(), /artifact .*changed/i)
+  const feedback = page.getByRole('status').filter({ hasText: /artifact .*changed/i })
+  assert.equal(await feedback.getAttribute('aria-live'), 'polite')
+  const longText = page.locator('.goal')
+  assert.equal(await longText.textContent(), longGoal)
+  assert.equal(await longText.locator('review').count(), 0)
   await page.getByLabel('退回理由').fill('请重新展示修改后的版本')
-  await button('退回修改').click()
+  await activate(button('退回修改'))
   await page.getByLabel('发给 Agent').fill('browser material revision')
   await button('发送').click()
   await waitReview()
@@ -201,7 +242,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: real browser development and materials flows, conversation, drift, return, acceptance, independent review and mobile layout.')
+  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
