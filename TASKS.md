@@ -13,7 +13,7 @@
 | DEV-007 | FR-005 | src/delivery | DEV-004 | active | 原生事件、交付版本与证据校验 |
 | DEV-008 | FR-007, NFR-004 | src/web | DEV-012 | review | 任务界面及两条 M1 验收链路 |
 | DEV-009 | FR-008, NFR-006 | src/usage | DEV-006 | active | 用量归属、缺报、费用估算与对账 |
-| DEV-010 | FR-009 | src/application | DEV-006 | planned | 索引及阶段交接 |
+| DEV-010 | FR-009 | src/application | DEV-006 | active | 索引及阶段交接 |
 | DEV-011 | FR-010 | src/harness | DEV-008, DEV-009 | planned | 有限委派与冲突隔离验证 |
 | DEV-012 | — | tests/integration | DEV-006 | review | M1 跨模块联调，先完成恢复、原生展示到提交、漂移退回及重交接受 |
 
@@ -31,6 +31,7 @@
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
+| `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
 
 DEV-009 提交 `750522d`，真实 Host 用量探针验证提供方与模型归属、正常和失败结算、重启后无模型调用的读取，以及缺报与显式零的区别。DeepSeek Messages 在原生结算前将缺失的输入和输出计数填为零，此处需作为覆盖缺口。费用估算、任务绑定、去重及完整 TST-006 仍待实现。
 
