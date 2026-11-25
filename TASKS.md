@@ -43,6 +43,7 @@
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
+| `DEV-010` | Codex | `dev/DEV-010-workbench-context` | 基于 `41ad708` 接入只读资料索引、按需预览和阶段交接，保留原资料适配分支 |
 
 DEV-010 提交 `a82eab1`，应用入口生成带工作区与观测日期的授权来源索引、过期提示及最近阶段交接。按需加载重查来源授权和 revision。15 项测试与原生存储重开通过；正式 Host 来源适配器及界面入口待联调。
 
