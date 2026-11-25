@@ -36,6 +36,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
+| `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
