@@ -45,3 +45,9 @@ TST-010 从 `8fde87b` 的旧插件写入真实原生回送及普通对话，然�
 - **公共契约**。原 v1 的提交输入与候选不兼容，旧的严格解码器也拒绝带验收证据或软预算新字段的响应。本地设计稿 `490c0de` 记录 14 组双向验证和版本迁移方案。资料、审阅和存储设计已合入 `main`。接口实现仍需随整体版本决策合入。[API 契约](API_SPEC.md) · [资料接口评审](https://github.com/linksucre/deepseek-workbench/pull/2) · [存储设计评审](https://github.com/linksucre/deepseek-workbench/pull/3)
 - **远端 CI**。候选 PR #6 的仓库门禁通过。Harness 集成尝试检出 `5bff262ae7f431f6a75cc1d4d7f52527d6e55727` 三次，均收到 `not our ref`，未执行构建和产品测试。M0 门禁在公开 Harness 上的检查通过并合入 `main`，其结果仅覆盖 M0。候选需从已批准、远端可检出的固定来源构建，并在同一发布提交上通过完整 CI。[候选失败日志](https://github.com/linksucre/deepseek-workbench/actions/runs/45653564770/job/139344148739) · [M0 门禁 PR](https://github.com/linksucre/deepseek-workbench/pull/4)
 - **真实任务**。原生技能复用、用户改选和冷读的模拟预检通过。TST-005 仍需任务所有者授权使用工作区、模型和费用范围，执行四种真实模型任务，按项保存提交、决定、用量和人工复核证据。[试跑手册](docs/design/M1-REAL-TASK-ACCEPTANCE.md)
+
+## 修复合并候选 `eae833a`
+
+候选已接入通过远端 CI 的领域主分支 `243e5d6`。本地临时选择包含排他创建修复的 Harness `f17e00c4ea`，通过 27 项回归、仓库差异门禁、actionlint、预设、存储、应用、资料、用量、原生 worktree、真实 Host 审阅专项及独立 npm 归档安装的 Chromium 流程。AC-010 未决期间拒绝新 ID 与 AC-013 有效 V1 文件保留在同一候选上通过。从 `8fde87b` 写入的审阅回送和普通消息通过升级及独立备份回退。Apple M1 Max、Node 24.22.3 上核对 3000 条任务的 60 页，50 次首页热读应用层 p95 为 7.48 ms。模型使用本地模拟。
+
+从空 Git 仓库直接向公开上游拉取 `f17e00c4ea` 仍返回 `not our ref`。以公开基础提交和本地 `harness-f17e00c4ea.bundle` 还原后，完整提交、对象连通性及 SHA-256 校验通过。发布固定值保持原样。正式验收仍需公共版本决定、CI 可检出的修复来源及 TST-005 的真实试跑。[本地复验步骤](docs/DEPLOYMENT.md#从本地评审包复验)

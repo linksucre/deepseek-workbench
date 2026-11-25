@@ -88,6 +88,8 @@ corepack pnpm run build
 
 原生构建需使用含 `node_api.h` 的 Node 24.22.3 与本机编译器。已有锁定依赖缓存时，安装命令可加 `--offline`。按前述安装步骤使用 `workbench-5d63e78.tgz`，从还原的 Workbench 检出运行 [测试计划](../TEST_PLAN.md) 中的命令。双版本升级与回退所需的旧 Workbench `8fde87b` 已在该 bundle 的历史中，可用独立 worktree 检出。评审包的发布条件见 [验收表](../ACCEPTANCE.md)。
 
+验证排他创建修复时，使用包含同一公开基础提交 `4b399c39a6d1479cd84ca591b4d7c88e24d38a96` 的独立 Harness 检出。从评审目录校验 `harness-f17e00c4ea.bundle` 的 `SHA256SUMS`，运行 `git bundle verify`，再从 bundle 拉取 `refs/heads/workbench/DEV-005-exclusive-record-create`。检出并核对完整提交 `f17e00c4ea12f5b334071ea8feac58bbd31953aa` 后构建。仅在测试副本中临时更新 Workbench 的固定提交以运行 TST-007 和 TST-010。正式 CI 使用维护者批准且可检出的远端来源。
+
 ## 配置用量估算及预算提醒
 
 可把本地 JSON 路径作为生成 overlay 的第三个参数。省略时仍可看计数和覆盖，估算金额为空。以下数字仅演示字段格式，部署时填写实际适用费率。费率单位为每百万 token，按提供方、模型和 UTC 生效日期匹配。
