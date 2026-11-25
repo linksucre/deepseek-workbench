@@ -233,12 +233,49 @@ function renderDetail() {
       area.append(row)
     }
     const decision = decisions.find(item => item.submissionId === submission.id)
-    const evidence = [...submission.evidence, ...(decision?.reviewEvidence ?? [])]
-    if (evidence.length) area.append(renderEvidence(submission, evidence))
     if (decision) area.append(node('p', decision.verdict === 'accept' ? '已验收' : `退回原因：${decision.reason}`))
+    area.append(evidencePanel(submission, decision))
     if (current && task.status === 'review') area.append(reviewEditor(submission))
     detail.append(area)
   }
+}
+
+const evidenceKinds = {
+  machine: '机器检查', user: '用户确认', 'model-claim': '模型自述', unverified: '未验证',
+}
+const evidenceOutcomes = { pass: '通过', fail: '失败', unknown: '结果未知' }
+const reportedOutcomes = { pass: '报告通过', fail: '报告失败', unknown: '结果未知' }
+
+function evidencePanel(submission, decision) {
+  const groups = new Map(submission.criteriaSnapshot.map(criterion =>
+    [criterion.id, { label: criterion.description, evidence: [] }]))
+  for (const item of [...submission.evidence, ...(decision?.reviewEvidence ?? [])]) {
+    if (!groups.has(item.criterionId)) groups.set(item.criterionId, { label: item.criterionId, evidence: [] })
+    groups.get(item.criterionId).evidence.push(item)
+  }
+  const pane = node('details', undefined, 'submission-evidence')
+  pane.append(node('summary', '验收证据'))
+  const rows = node('dl', undefined, 'evidence-criteria')
+  for (const { label, evidence } of groups.values()) {
+    const row = node('div')
+    row.append(node('dt', label))
+    for (const item of evidence) {
+      const kind = item.kind === 'machine' && !item.source ? 'unverified' : item.kind
+      const outcomes = kind === 'machine' || kind === 'user' ? evidenceOutcomes : reportedOutcomes
+      const entry = node('dd')
+      entry.append(node('strong', `${evidenceKinds[kind]} · ${outcomes[item.outcome]}`),
+        node('p', item.summary, 'evidence-summary'))
+      if (item.source) entry.append(node('code', item.source.locator))
+      const date = node('time', item.observedAt, 'subtle')
+      date.dateTime = item.observedAt
+      entry.append(date)
+      row.append(entry)
+    }
+    if (evidence.length === 0) row.append(node('dd', '未验证', 'subtle'))
+    rows.append(row)
+  }
+  pane.append(rows)
+  return pane
 }
 
 const countFormat = new Intl.NumberFormat('zh-CN')
@@ -475,28 +512,11 @@ function recoveryEditor() {
   return section('会话待核对', node('p', '核对已创建的会话，或结束本次启动意图。'), form)
 }
 
-function renderEvidence(submission, evidence) {
-  const labels = { machine: '机器检查', user: '人工确认', 'model-claim': '模型说明', unverified: '未核验' }
-  const outcomes = { pass: '通过', fail: '失败', unknown: '未知' }
-  const names = new Map(submission.criteriaSnapshot.map(item => [item.id, item.description]))
-  const area = node('div', undefined, 'evidence')
-  area.append(node('h3', '验收证据'))
-  const items = node('ul')
-  for (const item of evidence) {
-    const line = node('li')
-    line.append(node('strong', `${labels[item.kind]} · ${outcomes[item.outcome]} · ${names.get(item.criterionId) ?? item.criterionId}`),
-      node('p', item.summary))
-    items.append(line)
-  }
-  area.append(items)
-  return area
-}
-
 function reviewEditor(submission) {
   const area = node('div')
   const fieldset = node('fieldset')
   fieldset.append(node('legend', '逐项确认'))
-  const machine = submission.evidence.filter(item => item.kind === 'machine' && item.source !== null)
+  const machine = submission.evidence.filter(item => item.kind === 'machine' && item.source)
   const failed = new Set(machine.filter(item => item.outcome === 'fail').map(item => item.criterionId))
   const passed = new Set(machine.filter(item => item.outcome === 'pass').map(item => item.criterionId))
   const checks = submission.criteriaSnapshot.filter(item => !failed.has(item.id) && !passed.has(item.id)).map(item => {

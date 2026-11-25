@@ -56,6 +56,14 @@ li { margin: .3rem 0; overflow-wrap: anywhere }
 ul { padding-left: 1.15rem; margin: .45rem 0 }
 code, .path { overflow-wrap: anywhere; font-size: .84rem; color: var(--muted) }
 .file-row { display: grid; gap: .15rem; padding: .5rem 0; border-bottom: 1px solid var(--line) }
+.submission-evidence { margin: .8rem 0; overflow-wrap: anywhere }
+.submission-evidence summary { cursor: pointer }
+.evidence-criteria { margin: .5rem 0 }
+.evidence-criteria > div { border-top: 1px solid var(--line); padding: .5rem 0 }
+.evidence-criteria dt { font-weight: 600 }
+.evidence-criteria dd { margin: .35rem 0 0; padding-left: .7rem; border-left: 2px solid var(--line) }
+.evidence-criteria time { display: block }
+.evidence-summary { margin: .15rem 0; white-space: pre-wrap }
 fieldset { border: 1px solid var(--line); margin: .9rem 0; padding: .65rem; }
 fieldset label { display: flex; align-items: baseline; gap: .45rem; }
 dialog { width: min(520px, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); border: 1px solid var(--line); border-top: 4px solid var(--primary); padding: 1.4rem; background: var(--paper); color: var(--ink); }

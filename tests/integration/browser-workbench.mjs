@@ -208,8 +208,45 @@ try {
   await create('browser code task', 'development')
   await waitReview()
   await page.locator('main').getByText('code.md', { exact: true }).waitFor()
+  const evidence = page.locator('.submission-evidence')
+  await activate(evidence.locator('summary'))
+  await evidence.getByText('未验证', { exact: true }).first().waitFor()
   await accept()
   await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
+
+  await activate(evidence.locator('summary'))
+  await evidence.getByText('用户确认 · 通过', { exact: true }).first().waitFor()
+
+  // This response fixture exercises contract variants the current Host does not emit.
+  const commandRoute = '**/workbench/v1/command'
+  await page.route(commandRoute, async route => {
+    if (route.request().postDataJSON()?.operation !== 'task.get') return route.continue()
+    const response = await route.fetch()
+    const json = await response.json()
+    const submission = json.result.submissions.at(-1)
+    const base = { criterionId: submission.criteriaSnapshot[0].id, observedAt: submission.submittedAt }
+    const source = { kind: 'session-event', locator: '["root",5]', observedAt: base.observedAt }
+    submission.evidence.push(
+      { ...base, kind: 'machine', outcome: 'fail', source, summary: '退出码 1' },
+      { ...base, kind: 'model-claim', outcome: 'pass', source: null, summary: '<review>已通过</review>' },
+      { ...base, kind: 'unverified', outcome: 'unknown', source: null, summary: '等待佐证' },
+    )
+    await route.fulfill({ response, json })
+  })
+  await button('刷新任务').click()
+  await page.waitForFunction(() => document.querySelector('.submission-evidence')?.open === false)
+  await activate(evidence.locator('summary'))
+  await evidence.getByText('机器检查 · 失败', { exact: true }).waitFor()
+  await evidence.getByText('模型自述 · 报告通过', { exact: true }).waitFor()
+  await evidence.getByText('未验证 · 结果未知', { exact: true }).waitFor()
+  await evidence.getByText('<review>已通过</review>', { exact: true }).waitFor()
+  assert.equal(await evidence.locator('review').count(), 0)
+  await evidence.getByText('["root",5]', { exact: true }).waitFor()
+  const desktop = page.viewportSize()
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
+  await page.setViewportSize(desktop)
+  await page.unroute(commandRoute)
 
   await page.getByText('Token 与费用', { exact: true }).click()
   await page.getByText(/预算提醒.*已达到提醒金额/).waitFor()
@@ -251,7 +288,9 @@ try {
 
   await create(checkedTitle, 'development', '交付 JSON', 'JSON 格式有效\n与任务主题相符')
   await waitReview()
-  await page.getByText('机器检查 · 失败 · JSON 格式有效', { exact: true }).waitFor()
+  const currentEvidence = page.locator('.submission-evidence').first()
+  await currentEvidence.locator('summary').click()
+  await currentEvidence.getByText('机器检查 · 失败', { exact: true }).waitFor()
   const manual = page.getByRole('checkbox', { name: '与任务主题相符' })
   await manual.check()
   assert.equal(await button('接受提交').isDisabled(), true)
@@ -261,7 +300,8 @@ try {
   await page.getByLabel('发给 Agent').fill(checkedRevision)
   await button('发送').click()
   await waitReview()
-  await page.getByText('机器检查 · 通过 · JSON 格式有效', { exact: true }).waitFor()
+  await currentEvidence.locator('summary').click()
+  await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
   assert.equal(await page.getByRole('checkbox', { name: 'JSON 格式有效' }).count(), 0)
   const decisionRequest = page.waitForRequest(request => request.url().endsWith('/workbench/v1/command') &&
     request.method() === 'POST' && request.postDataJSON().operation === 'task.decide')
@@ -271,9 +311,11 @@ try {
   await stop()
   await openWorkbench(await start())
   await page.getByRole('button', { name: /browser checked artifact/ }).click()
-  await page.getByText('机器检查 · 通过 · JSON 格式有效', { exact: true }).waitFor()
-  await page.getByText('机器检查 · 失败 · JSON 格式有效', { exact: true }).waitFor()
-  await page.getByText('人工确认 · 通过 · 与任务主题相符', { exact: true }).waitFor()
+  await currentEvidence.locator('summary').click()
+  await page.locator('.submission-evidence').last().locator('summary').click()
+  await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
+  await currentEvidence.getByText('用户确认 · 通过', { exact: true }).waitFor()
+  await page.locator('.submission-evidence').last().getByText('机器检查 · 失败', { exact: true }).waitFor()
 
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
