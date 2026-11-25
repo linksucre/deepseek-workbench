@@ -33,6 +33,7 @@
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
 | `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
 | `DEV-005` | Codex | `dev/DEV-005-storage-failure-verification` | 基于 `04ff750` 补验 TST-007 不可读取的任务路径、打开后的记录损坏、拒写后从干净备份重试 |
+| `DEV-005` | Codex | `dev/DEV-005-profile-recovery-guide` | 在 `8ad4e9b` 补齐 NFR-003 停写备份、恢复副本及导出边界说明，验证复制命令 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence-design` | 固定 Host 的自动机器检查来源、授权、版本与重启语义评审 |
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence` | 提交时用宿主固定检查校验已选产物与版本，复验 TST-004 的机器结果和人工确认 |
@@ -47,6 +48,7 @@
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-timeout-verification` | 从 `97af999` 补验 TST-010 审阅超时、资源清理和并发插槽释放 |
 | `DEV-011` | Codex | `dev/DEV-011-review-recovery-regression` | 在候选上封装冷根及两个回执问题的真实 Host 回归，只改测试和评审说明 |
+| `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-probe-verification` | 从 `fb5692b` 隔离复验冷根、核对与回送专项红测，只改测试和对应说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
