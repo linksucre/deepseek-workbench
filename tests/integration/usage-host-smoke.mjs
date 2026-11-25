@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { summarizeTaskUsage } from '../../src/usage/task-usage.mjs'
 
 const upstream = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url)))
@@ -95,6 +96,7 @@ async function start() {
 async function measure(rpc, sessionId) {
   const projection = await rpc('session/projections', { sessionId })
   const page = await rpc('session/events', { address: { kind: 'session', sessionId } })
+  assert.equal(page.hasMore, false, 'fixture reads one complete history')
   const events = page.records.map(record => record.event).filter(Boolean)
   const settlements = events.filter(event => event.type === 'assistant/message' || event.type === 'assistant/attempt')
   assert.equal(settlements.length, 1, 'one native settlement per fixture session')
@@ -103,7 +105,11 @@ async function measure(rpc, sessionId) {
   const [settlement] = settlements
   const usage = settlement.data.usage ?? settlement.data.stream.findLast(record =>
     record.type === 'chunk' && record.chunk.type === 'usage')?.chunk.usage
-  return { totals: projection.values.tokenUsage, settlement: settlement.type, usage, route: route.data }
+  const taskUsage = summarizeTaskUsage({
+    taskId: 'de39c282-481c-4939-8e50-673bf5da7c76',
+    sessions: [{ sessionId, afterSeq: -1, inheritedEventCount: 0, events }],
+  })
+  return { totals: projection.values.tokenUsage, settlement: settlement.type, usage, route: route.data, taskUsage }
 }
 
 try {
@@ -131,6 +137,12 @@ try {
   assert.equal(refused.usage.inputTokens, 7)
   assert.equal(refused.usage.outputTokens, 2)
   assert.deepEqual(refused.totals, { uncachedInputTokens: 7, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 })
+  assert.equal(known.taskUsage.buckets[0].uncachedInput, known.totals.uncachedInputTokens)
+  assert.equal(known.taskUsage.buckets[0].cacheRead, null)
+  assert.equal(omitted.taskUsage.completeness, 'unknown')
+  assert.equal(explicitZero.taskUsage.completeness, 'partial')
+  assert.equal(explicitZero.taskUsage.buckets[0].cacheRead, 0)
+  assert.equal(refused.taskUsage.buckets[0].uncachedInput, refused.totals.uncachedInputTokens)
 
   await stop()
   const callsBeforeColdReads = modelCalls
