@@ -44,10 +44,12 @@ const binding = { id: 'session-fixed-root', isSeeded: false, cwd: workspacePath 
 let leaseCount = 0
 let sourceReads = 0
 let afterRead
+let afterObserve
 const sessionQuery = {
   async observeSession(sessionId) {
     assert.equal(sessionId, binding.id)
     leaseCount += 1
+    afterObserve?.()
     return { header: binding, events: [
       { seq: 1, type: 'user/message', data: { source: { kind: 'user' },
         content: [{ type: 'text', text: 'Source discussion' }, { type: 'image', data: 'private metadata' }] } },
@@ -198,10 +200,20 @@ try {
     afterRead = () => writeFile(join(workspacePath, reference.locator), 'Changed while reading')
     await assert.rejects(context.load(owner, hostTaskId, reference), { code: 'NOT_FOUND' })
     afterRead = undefined
+
+    const readsBeforeRevocation = sourceReads
+    afterRead = () => { workspaceRegistry.delete('project') }
+    await assert.rejects(context.load(owner, hostTaskId, reference), { code: 'NOT_FOUND' })
+    assert.equal(sourceReads, readsBeforeRevocation + 1)
+    afterRead = undefined
+    workspaceRegistry.set('project', workspace)
+
     await assert.rejects(context.get({ ...owner }, hostTaskId), { code: 'NOT_FOUND' })
-    workspace.sessionIds = []
+    afterObserve = () => { workspace.sessionIds = [] }
     await assert.rejects(context.load(owner, hostTaskId, messageSource), { code: 'NOT_FOUND' })
     assert.equal(leaseCount, 0)
+    afterObserve = undefined
+    await assert.rejects(context.load(owner, hostTaskId, messageSource), { code: 'NOT_FOUND' })
   })
   console.log('PASS: native storage reopen and native filesystem scoping, bounded reads, session projection and stage handoff.')
 } finally {
