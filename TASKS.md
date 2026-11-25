@@ -39,6 +39,8 @@ DEV-009 提交 `db9e681`，提供 `createHostTaskUsage` 供应用层接线。读
 
 DEV-009 提交 `b528ca2`、`e6fd1fe`，真实 Host 新建两个原生 fork，验证只纳入绑定子会话的独有用量，并在移除模型凭据后的冷启动复算。已提供按路由及生效日期查价的离线费率配置能力，14 项测试与真实 Host 冒烟通过。生产命令装配应在 DEV-008 宿主入口中复用既有 owner 授权和 `task.usage` 契约，注入 `createHostTaskUsage` 与 `createRateLookup`。
 
+DEV-009 提交 `7787655` 记录 `75fab3f` 的临时组合试验。按现有授权将 `task.usage` 接到实际源码 overlay 后，无认证、跨源和未知任务正确拒绝，正常任务在执行、接受与重启后均可读取用量。完整 M1 冒烟仍通过。工作台生产分支尚需合入命令装配和部署费率。
+
 DEV-005 提交 `d139fe0`，原生 JSON 后端已验证启动意图持久化、revision 竞争、幂等重放、关闭重开与备份恢复。工作台 Host 集成和迁移仍待验证。DEV-004 可通过 `src/storage/task-repository.mjs` 的 commit 在单键更新中保存或清除 pendingIntent；跨模块接口由 DEV-006 接入。
 
 DEV-004 提交 `44cf655`，已将真实 Web Host 的挂载故障和冷启动复挂载纳入冒烟测试。原生挂载错误返回原会话与工作区 ID；复挂载保持原 ID，重复请求只留一个成员关系，再次重启仍能读取。工作台如何持久化和核验受信 Host 回执仍待评审；工作台恢复实现等待 DEV-003 合并及方案确认。
