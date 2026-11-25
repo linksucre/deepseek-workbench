@@ -25,6 +25,8 @@ TST-011 的上下文冒烟还验证多块会话文本的 8192 字符边界。换
 
 真实 Host 冒烟验证任务对话与跨重启恢复的审阅摘要也保持 8192 字符边界上的完整 emoji。
 
+TST-005 的模拟预检在独立技能目录创建写作夹具，验证原生目录列出技能，`skill` 返回夹具正文，`workbench_suggest` 保存复用建议及技能 ID。用户改选后，冷读仍保留前后选择及来源。真实模型的选择质量、产物和人工复核时长另行验收。
+
 DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，也可用下列参数逐一运行：
 
 - `--review-recovery-regressions=cold-root` 先观察原生根会话确实未加载，再核对拒绝无副作用、激活后仍可派发两次。

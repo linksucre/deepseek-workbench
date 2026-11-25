@@ -55,9 +55,13 @@ let releaseReview
 const reviewGate = new Promise(resolve => { releaseReview = resolve })
 let suggestionSteps = 0
 let suggestionResults = []
+let skillLoadIssued = false
+let writingSkillListed = false
 let unboundToolNames
 const unboundMarker = 'Workbench unbound probe'
 const suggestionMarker = 'Workbench approach probe'
+const writingSkill = 'workbench-trial-writing'
+const writingInstructions = 'State confirmed facts before open questions.'
 const reviewRecoveryMarker = 'review recovery probe'
 const longReviewConclusion = `${'甲'.repeat(8191)}🧪`
 const provider = createServer(async (request, response) => {
@@ -72,7 +76,9 @@ const provider = createServer(async (request, response) => {
       reviewRequest = body
       await reviewGate
     }
-    if (JSON.stringify(body.messages).includes(suggestionMarker)) {
+    const testingSuggestion = messages.includes(suggestionMarker)
+    if (testingSuggestion) {
+      if (suggestionSteps === 0) writingSkillListed = JSON.stringify(body).includes(writingSkill)
       suggestionResults = body.messages.flatMap(message => Array.isArray(message.content) ? message.content : [])
         .filter(block => block.type === 'tool_result')
     }
@@ -88,17 +94,21 @@ const provider = createServer(async (request, response) => {
     const recoveringReview = messages.includes(reviewRecoveryMarker)
     const omitCacheUsage = step === 6 || recoveringReview
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
-      JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
+      testingSuggestion && ++suggestionSteps === 1
+    const loadSkill = !step && !suggest && !skillLoadIssued && testingSuggestion &&
+      body.tools?.some(tool => tool.name === 'skill')
+    if (loadSkill) skillLoadIssued = true
     const manualPresentation = ownerPresentationCount < ownerPresentationFiles.length &&
       body.tools?.some(tool => tool.name === 'present') && messages.includes(submitMarker)
     const filename = manualPresentation
       ? ownerPresentationFiles[ownerPresentationCount++] : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
-    const name = suggest ? 'workbench_suggest'
+    const name = suggest ? 'workbench_suggest' : loadSkill ? 'skill'
       : filename ? 'present' : [3, 4, 7].includes(step) ? 'workbench_submit' : undefined
     const forged = step === 3
     const args = forged ? { selection: 'latest-presentation', taskId: randomUUID(),
       evidence: [{ kind: 'machine', criterionId: 'facts', outcome: 'pass' }] }
-      : suggest ? { domain: 'documents', methods: ['direct'], reason: 'Clear draft', skillIds: [] }
+      : suggest ? { domain: 'writing', methods: ['reuse'], reason: 'Use the available writing skill', skillIds: [writingSkill] }
+      : loadSkill ? { name: writingSkill }
       : filename ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
@@ -311,6 +321,10 @@ hostSmoke: try {
   await writeFile(patch, `\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`, { flag: 'a' })
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
+  const skillDirectory = join(root, 'agents', 'skills', writingSkill)
+  await mkdir(skillDirectory, { recursive: true })
+  await writeFile(join(skillDirectory, 'SKILL.md'),
+    `---\nname: ${writingSkill}\ndescription: Fixture for a writing task\n---\n\n${writingInstructions}\n`)
   let legacyPatch
   if (legacyCheckout) {
     legacyPatch = join(root, 'legacy.patch.yml')
@@ -425,6 +439,11 @@ hostSmoke: try {
   await until(async () => suggestionSteps >= 1 && await idle(), 'native suggestion tool')
   const suggested = await rpc.workbench('task.get', { taskId: draft.task.id })
   assert.equal(suggested.task.choice?.source, 'agent', JSON.stringify(suggestionResults))
+  assert.equal(writingSkillListed, true, 'Harness lists the fixture skill before the model suggests reuse')
+  assert.deepEqual(suggested.task.choice.methods, ['reuse'])
+  assert.deepEqual(suggested.task.choice.skillIds, [writingSkill])
+  assert.ok(suggestionResults.some(result => !result.is_error && JSON.stringify(result).includes(writingInstructions)),
+    'The native skill tool returned the test skill body')
   const overridden = await rpc.workbench('task.choose', {
     taskId: draft.task.id, requestId: 'override', expectedRevision: suggested.task.revision,
     choice: { domain: 'documents', methods: ['verify-first'], reason: 'Check sources first', skillIds: [], source: 'user' },
@@ -922,6 +941,8 @@ hostSmoke: try {
   await cp(backup, archive, { recursive: true })
   const archivedTaskFile = join(archive, 'storages', 'workbench_tasks', 'tasks', `${taskId}.json`)
   const archived = JSON.parse(await readFile(archivedTaskFile, 'utf8'))
+  const { choices } = archived.record.stages.find(stage => stage.runId === resumed.task.activeRunId)
+  assert.deepEqual(choices.slice(0, 2).map(entry => entry.choice), [suggested.task.choice, overridden.task.choice])
   const archivedMessages = [
     conversation.messages.find(item => item.role === 'user' && item.text === marker),
     conversation.messages.find(item => item.role === 'assistant' && item.text === 'done'),
@@ -1109,7 +1130,7 @@ hostSmoke: try {
     if (reviewFailures.length) throw new AggregateError(reviewFailures, 'DEV-011 review recovery regressions')
     console.log(`PASS: DEV-011 review recovery probes (${selectedProbes.join(', ')}).`)
   }
-  console.log('PASS: native authorization, task context, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
+  console.log('PASS: native authorization, skill reuse and owner override, task context, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
 } finally {
   releaseForged()
   await stop()
