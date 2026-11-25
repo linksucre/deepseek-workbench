@@ -182,6 +182,7 @@ function renderDetail() {
   const criteria = node('div')
   criteria.append(node('strong', '验收条件'), list(task.criteria.map(item => item.description)))
   brief.append(deliverables, criteria)
+  const run = runs.find(item => item.id === task.activeRunId) ?? runs.at(-1)
   const actions = node('div', undefined, 'actions')
   actions.append(button('刷新任务', () => perform(() => loadTask(task.id))))
   if (['draft', 'ready'].includes(task.status)) actions.append(button('编辑任务', () => openTaskForm(task)))
@@ -195,13 +196,17 @@ function renderDetail() {
   if (['draft', 'ready', 'active', 'paused', 'review'].includes(task.status)) {
     actions.append(button('取消任务', () => taskAction('task.cancel')))
   }
+  if (run?.rootSessionId) {
+    const jump = node('a', '查看执行会话')
+    jump.href = '#execution-session'
+    actions.append(jump)
+  }
   detail.replaceChildren(head, node('p', task.goal, 'goal'), actions, section('任务要求', brief))
   if (task.choice) {
     detail.append(section('执行方式', node('p', task.choice.methods.map(key => methods[key] ?? key).join('、')),
       node('p', task.choice.reason), node('span', task.choice.source === 'user' ? '用户选定' : 'Agent 建议', 'subtle')))
   }
   if (['draft', 'ready', 'active', 'paused'].includes(task.status)) detail.append(choiceEditor(task))
-  const run = runs.find(item => item.id === task.activeRunId) ?? runs.at(-1)
   if (run?.rootSessionId) {
     const link = node('a', '返回 Harness')
     link.href = '/'
@@ -296,6 +301,10 @@ function conversationPanel(task, metadata) {
   history.setAttribute('aria-live', 'polite')
   const state = node('p', '正在读取会话', 'subtle')
   const area = section('执行会话', metadata, state, history)
+  area.id = 'execution-session'
+  area.tabIndex = -1
+  area.firstElementChild.id = 'execution-session-title'
+  area.setAttribute('aria-labelledby', 'execution-session-title')
   let seq = 0
   let polling
   async function refresh(tries = 0) {
