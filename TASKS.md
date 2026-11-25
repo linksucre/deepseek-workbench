@@ -30,6 +30,7 @@
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
 | `DEV-005` | Codex | `dev/DEV-005-protect-task-records` | 提交 AC-013 存储设计，验证按域启用 JSON 保护，保留原始文件 |
+| `DEV-005` | Codex | `dev/DEV-005-storage-failure-verification` | 基于 `04ff750` 补验 TST-007 不可读取的任务路径、打开后的记录损坏、拒写后从干净备份重试 |
 | `DEV-007` | Codex | `dev/DEV-007-delivery` | 展示选择、文件版本核验和证据转换；宿主绑定依赖 DEV-004 |
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence-design` | 固定 Host 的自动机器检查来源、授权、版本与重启语义评审 |
 | `DEV-007` | Codex | `dev/DEV-007-machine-evidence` | 提交时用宿主固定检查校验已选产物与版本，复验 TST-004 的机器结果和人工确认 |
@@ -40,11 +41,13 @@
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
+| `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
 | `DEV-011` | Codex | `dev/DEV-011-review-recovery-regression` | 在候选上封装冷根及两个回执问题的真实 Host 回归，只改测试和评审说明 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-evidence-candidate` | 联调 TST-010 隔离试验与已提交固定检查和证据展示 |
 | `DEV-008` | Codex | `dev/DEV-008-web-workbench` | 本地可部署入口、任务列表、详情和验收 UI |
 | `DEV-008` | Codex | `dev/DEV-008-review-evidence` | 从 `7ebd304` 接入现有证据契约的提交详情展示和浏览器验收 |
 | `DEV-008` | Codex | `dev/DEV-008-execution-choice` | 基于 `41ad708` 补齐既有执行方式契约的组合选择与任务说明，验证 FR-003 交互 |
+| `DEV-008` | Codex 协作 Agent | `dev/DEV-008-recovery-browser` | 从 `04ff750` 补验已存在的任务表单及待核对浏览器操作 |
 | `DEV-009` | 原生用量 Agent | `dev/DEV-009-native-usage` | 用量归集、数据源与独立 Host 验证 |
 | `DEV-009` | Codex | `dev/DEV-009-usage-integration` | 消费已提交用量接口，接入 owner 命令、费率和工作台显示 |
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
