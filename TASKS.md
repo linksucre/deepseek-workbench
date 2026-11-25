@@ -39,6 +39,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-host-delivery` | 联调切片：先接真实 Host 展示事件，后续继续完整验收 |
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
+| `DEV-012` | Codex | `dev/DEV-012-real-task-fixtures` | 从 `714357a` 准备 TST-005 的四项本地试跑材料、判定和留证说明，先验证材料可用性 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-recovery-design` | 修订 M3 评审稿，明确冷根派发、审阅回执作用域及历史兼容，只修改设计文档 |
 | `DEV-011` | Codex 协作 Agent | `dev/DEV-011-review-bounds-verification` | 从 `04ff750` 补验 TST-010 的 UTF-8 材料边界及原生模型单轮输出配置 |
@@ -53,6 +54,7 @@
 | `DEV-010` | Codex | `dev/DEV-010-context-handoff` | 独立上下文索引、按需读取和阶段交接，先验证 TST-011 的原生存储重开与授权 |
 | `DEV-010` | Codex | `dev/DEV-010-workbench-context` | 基于 `41ad708` 接入只读资料索引、按需预览和阶段交接，保留原资料适配分支 |
 | `DEV-010` | Codex 协作 Agent | `dev/DEV-010-context-verification` | 从 `cf9066b` 独立核验既有原生上下文读取及工作区变化时的拒绝行为，覆盖 TST-011 |
+| `DEV-010` | Codex 协作 Agent | `dev/DEV-010-handoff-merge-verification` | 从 `81b9635` 隔离候选的阶段交接呈现修正和 TST-011 浏览器红绿验证 |
 
 DEV-010 提交 `a82eab1`，应用入口生成带工作区与观测日期的授权来源索引、过期提示及最近阶段交接。按需加载重查来源授权和 revision。15 项测试与原生存储重开通过；正式 Host 来源适配器及界面入口待联调。
 
