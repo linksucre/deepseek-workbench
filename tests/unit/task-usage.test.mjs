@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { summarizeTaskUsage } from '../../src/usage/task-usage.mjs'
+import { createRateLookup } from '../../src/usage/usage-cost.mjs'
 
 const taskId = 'f86b562f-2555-4ba8-9220-4a2987b59a27'
 const time = Date.parse('2026-11-25T00:00:00Z')
@@ -59,13 +60,26 @@ test('estimates decimal costs per attempt, with no fabricated amount for missing
     ['assistant/message', { ...step, step: 2, usage: tokens(7, 2) }, tomorrow],
   ])
   const rate = { currency: 'USD', rateDate: '2026-11-25', perMillion: { uncachedInput: '1.25', output: '5.1', cacheRead: '0.2' } }
-  const lookupRate = ({ model, time: at }) => {
-    assert.equal(at, model === route.model ? time : tomorrow)
-    return model === route.model ? rate : { ...rate, rateDate: '2026-11-26' }
+  const configured = createRateLookup([{ ...route, ...rate }, { ...model2, ...rate, rateDate: '2026-11-26' }])
+  const lookupRate = request => {
+    assert.equal(request.time, request.model === route.model ? time : tomorrow)
+    return configured(request)
   }
   assert.deepEqual(summarize([native], { lookupRate }).estimatedCost, {
     decimalAmount: '0.0000282', currency: 'USD', rateDate: '2026-11-26',
   })
   assert.equal(summarize([native], { lookupRate: ({ model }) => model === route.model ? rate : undefined }).estimatedCost, null)
   assert.equal(summarize([native], { lookupRate: ({ model }) => model === route.model ? rate : { ...rate, currency: 'CNY' } }).estimatedCost, null)
+})
+
+test('selects the latest offline rate effective at the request, independent of input order', () => {
+  const original = { ...route, currency: 'USD', rateDate: '2026-11-25', perMillion: { output: '2' } }
+  const next = { ...original, rateDate: '2026-11-26', perMillion: { output: '3.5' } }
+  const lookupRate = createRateLookup([next, original])
+  assert.equal(lookupRate({ ...route, time: time - 1 }), undefined)
+  assert.equal(lookupRate({ ...route, time }).perMillion.output, '2')
+  assert.equal(lookupRate({ ...route, time: time + 86_400_000 }).perMillion.output, '3.5')
+  assert.equal(lookupRate({ ...route, model: 'unpriced', time }), undefined)
+  assert.throws(() => createRateLookup([original, original]), /Duplicate configured usage rate/)
+  assert.throws(() => createRateLookup([{ ...original, rateDate: '2026-02-30' }]), /Invalid configured usage rate/)
 })

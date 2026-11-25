@@ -18,6 +18,10 @@ const samples = new Map([
   ['usage-explicit-zero', { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
   ['usage-provider-refusal', { input_tokens: 7, output_tokens: 2 }],
 ])
+const childSamples = new Map([
+  ['usage-bound-child', { input_tokens: 11, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
+  ['usage-unbound-child', { input_tokens: 13, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
+])
 const data = await mkdtemp(join(tmpdir(), 'workbench-usage-'))
 const taskId = 'de39c282-481c-4939-8e50-673bf5da7c76'
 const patch = join(data, 'usage.patch.yml')
@@ -31,7 +35,7 @@ const provider = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk)
     const input = JSON.parse(Buffer.concat(chunks))
     const finalMessage = JSON.stringify(input.messages.at(-1))
-    const sample = [...samples].find(([prompt]) => finalMessage.includes(prompt))
+    const sample = [...samples, ...childSamples].find(([prompt]) => finalMessage.includes(prompt))
     assert.ok(sample, 'the mock only serves known usage fixtures')
     modelCalls += 1
     const events = [
@@ -152,21 +156,35 @@ try {
   assert.equal(refused.taskUsage.buckets[0].uncachedInput, refused.totals.uncachedInputTokens)
 
   await stop()
-  const callsBeforeColdReads = modelCalls
-  assert.ok(callsBeforeColdReads >= samples.size, 'all fixture prompts reached the mock provider')
+  assert.ok(modelCalls >= samples.size, 'all fixture prompts reached the mock provider')
+  const forks = [...childSamples.keys()].map(prompt => ({ id: `session-${randomUUID()}`, prompt, name: prompt }))
+  const boundChild = forks[0].id
   const output = join(data, 'usage-result.json')
-  rpc = await start({ workspaceId: workspace.workspaceId, taskId, output, sessions })
+  const bindings = { workspaceId: workspace.workspaceId, taskId, output, sessions, boundChild }
+  rpc = await start({ ...bindings, forks })
   const cold = await Promise.all(sessions.map(id => measure(rpc, id)))
   assert.deepEqual(cold, live)
-  const hostUsage = JSON.parse(await readFile(output, 'utf8'))
-  assert.equal(hostUsage.taskId, taskId)
-  assert.equal(hostUsage.completeness, 'partial')
-  assert.deepEqual(hostUsage.buckets, [{
+  const { baseline: beforeFork, usage } = JSON.parse(await readFile(output, 'utf8'))
+  assert.equal(beforeFork.taskId, taskId)
+  assert.equal(beforeFork.completeness, 'partial')
+  assert.deepEqual(beforeFork.buckets, [{
     provider: known.route.provider, model: known.route.model, uncachedInput: 10, output: 3, cacheRead: 0, cacheWrite: 0,
   }])
+  assert.equal(usage.completeness, 'partial')
+  assert.deepEqual(usage.buckets, [{
+    provider: known.route.provider, model: known.route.model, uncachedInput: 21, output: 7, cacheRead: 0, cacheWrite: 0,
+  }])
+  assert.match(usage.coverageNotes[0], /^1 bound or expected session/)
+
+  await stop()
+  const callsBeforeColdReads = modelCalls
+  await rm(output)
+  await start(bindings)
+  assert.deepEqual(JSON.parse(await readFile(output, 'utf8')).usage, usage)
   assert.equal(modelCalls, callsBeforeColdReads, 'reading restored usage makes no model calls')
   console.log('PASS: native usage shows totals, history route and available cache fields across restart; input/output omissions are indistinguishable from zero.')
   console.log('PASS: reported usage from a failed provider attempt survives restart and contributes to native totals.')
+  console.log('PASS: only the bound native fork contributes its own usage, without inherited tokens or model calls on cold read.')
 } finally {
   await stop()
   provider.closeAllConnections()
