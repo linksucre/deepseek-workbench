@@ -31,7 +31,7 @@
 | `DEV-002` | Codex | `dev/DEV-002-release-review` | 基于 `97af999` 汇集待评审设计、Harness 上游差异和发布验收入口，只改评审文档 |
 | `DEV-002` | Codex | `dev/DEV-002-harness-bundle-review` | 从 `b3fbb97` 验证受保护 Harness 两提交的离线评审交接，记录精确恢复与校验步骤 |
 | `DEV-002` | Codex | `dev/DEV-002-acceptance-sync` | 基于主工作目录工单，将全部 AC 的可追溯本地证据和待验条件回填根目录验收与入口文档 |
-| `DEV-002` | Codex | `dev/DEV-002-receipts-release-verification` | 从 `c2591c5` 复跑候选全部本地门禁并登记同一提交的验收证据，范围为验收说明 |
+| `DEV-002` | Codex | `dev/DEV-002-receipts-release-verification` | 独立复跑候选全部本地门禁，合并已验证的 `b132967`，同步同一代码提交的验收证据 |
 | `DEV-004` | 另一 Agent（根据已存在的工作树登记） | `dev/DEV-004-harness-recovery` | Harness 会话恢复及对应测试 |
 | `DEV-005` | Codex | `dev/DEV-005-task-storage` | 存储适配、存储测试与对应文档 |
 | `DEV-005` | Codex | `dev/DEV-005-release-verification` | 基于 `6310cfb` 的 TST-007 联调，验证 V1 兼容、损坏记录及停用后恢复 |
@@ -257,3 +257,5 @@ DEV-002 `163d291` 在候选 `c2591c5` 的隔离工作树独立复跑完整本地
 DEV-008 的回送拒绝后重试修复 `86dfdef` 已合入联调代码 `c2591c5`，验收记录 `c2487a0`。独立安装 npm 归档后的 Chromium 全流程验证明确拒绝后直接重试使用新请求和当前 revision，后续受理成功但响应丢失时，重新加载后仍核对原请求。27 项回归、差异门禁、actionlint、预设、存储、应用、资料、用量和 worktree 检查通过。3000 条任务完整核对 60 页，本机应用层热读首页 p95 7.98 ms。正式验收仍等待公共设计评审、TST-005 试跑授权及 CI 可拉取基线。
 
 DEV-006 `b132967` 修复 DEV-011 回送错误证明。固定 Harness 的真实 Host 在入队后注入附同名 `session/not-found` 的普通异常，候选 `c2487a0` 将其误记为 `INVALID_TRANSITION`。修复后只有带原生标记、错误码匹配且指向本次根会话的结构化拒绝才结算失败。相同注入返回待核对，重启后从原生事件确认只入队一次。明确拒绝和原三项审阅专项、完整 Host、27 项回归、仓库门禁、actionlint 和独立安装包 Chromium 通过，使用本地模拟模型。提交可接入联调分支。
+
+DEV-002 在本地候选 `a373791` 合入 `b132967`，验收记录 `a94549c`。同一代码提交通过 27 项回归、差异文档门禁、actionlint、预设、存储、应用、用量、资料、worktree、分页、完整真实 Host、明确拒绝、双版本升级与备份回退及独立归档 Chromium。3000 条任务顺序、末游标和全部 60 页通过，本机应用层首页热读 p95 10.79 ms。TST-005 四项合成材料及开发基线测试复核完成，待真实模型授权后运行。候选仍待公共设计评审与上游可拉取基线。
