@@ -18,4 +18,4 @@
 | AC-014 | NFR-004 | TST-008 | 达到 SRS 的分页负载条件并记录本地数据 | 待实现 |
 | AC-015 | NFR-005 | TST-009 | 本地门禁通过且能识别断链，CI 与合并要求已定义 | 已通过本地门禁及托管 CI |
 
-候选发布要求当前里程碑的所有验收通过、上游版本匹配、回滚步骤已验证，维护者留存结果。主分支 `e252c32` 已通过 [GitHub 托管 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839/attempts/2)，包括从公开固定提交构建 Harness 和用模拟模型验证预设。主分支合并要求独立审批和两项 CI 检查。真实模型选择质量由 TST-005 单独验收。
+候选发布要求当前里程碑的所有验收通过、上游版本匹配、回滚步骤已验证，维护者留存结果。主分支 `e252c32` 已通过 [GitHub 托管 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839/attempts/2)，包括从公开固定提交构建 Harness 和用模拟模型验证预设。主分支通过 PR 合并，保留独立技术复核记录，并通过两项必需 CI 检查。真实模型选择质量由 TST-005 单独验收。
