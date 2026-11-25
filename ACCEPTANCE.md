@@ -32,4 +32,6 @@ TST-010 从 `8fde87b` 的旧插件写入真实原生回送及普通对话，然�
 
 合并回送拒绝判定修复后的候选 `a373791` 通过 27 项回归、差异文档门禁、actionlint、预设、存储、应用、用量、资料、worktree、分页、真实 Host 审阅及拒绝专项、双版本升级和备份回退，以及从独立 npm 归档安装的 Chromium 全流程。新回归核对回送已入队后带同名错误码的普通异常，重启后按原记录确认受理一次。TST-005 四项合成材料在临时工作区可读，开发场景原有测试通过。此轮模型使用本地模拟。
 
+当前行为候选 `6aa9aee` 合入备份与回执回归、资料预览、任务对话和审阅摘要的 Unicode 边界修复。使用同一 Harness 及本地模拟模型复跑 27 项回归、仓库门禁、actionlint、存储、资料、全量 Host 审阅及独立 npm 归档 Chromium，通过。工单状态和历史证据见随候选保存的 [任务板快照](TASKS.md)。
+
 发布验收仍需任务所有者授权并执行 [TST-005](docs/design/M1-REAL-TASK-ACCEPTANCE.md)，维护者评审 [资料接口](docs/design/M2-WORKBENCH-CONTEXT.md)、[审阅回执](docs/design/M3-BOUNDED-REVIEW.md) 和 [任务记录保护](docs/design/TASK-RECORD-PRESERVATION.md)。从空 Git 仓库向配置的上游拉取固定 Harness 提交 `5bff262ae7f431f6a75cc1d4d7f52527d6e55727` 仍返回 `not our ref`。正式 CI 需用已批准且可拉取的基线实际运行，并保留远端结果。
