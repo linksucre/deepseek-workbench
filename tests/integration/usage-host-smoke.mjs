@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -19,6 +19,8 @@ const samples = new Map([
   ['usage-provider-refusal', { input_tokens: 7, output_tokens: 2 }],
 ])
 const data = await mkdtemp(join(tmpdir(), 'workbench-usage-'))
+const taskId = 'de39c282-481c-4939-8e50-673bf5da7c76'
+const patch = join(data, 'usage.patch.yml')
 let modelCalls = 0
 let child
 let closed
@@ -53,15 +55,17 @@ async function stop() {
   child = undefined
 }
 
-async function start() {
+async function start(bindings) {
   child = spawn(process.execPath, [
-    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--no-open', '--host', '127.0.0.1', '--port', '0',
+    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
+    '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
     cwd: upstream,
     env: {
       ...process.env,
       DSH_HOME: join(data, 'dsh'), DSH_AGENTS_HOME: join(data, 'agents'),
       DEEPSEEK_API_KEY: 'mock-usage-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      WORKBENCH_USAGE_TEST_BINDINGS: bindings === undefined ? '' : JSON.stringify(bindings),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -106,19 +110,22 @@ async function measure(rpc, sessionId) {
   const usage = settlement.data.usage ?? settlement.data.stream.findLast(record =>
     record.type === 'chunk' && record.chunk.type === 'usage')?.chunk.usage
   const taskUsage = summarizeTaskUsage({
-    taskId: 'de39c282-481c-4939-8e50-673bf5da7c76',
+    taskId,
     sessions: [{ sessionId, afterSeq: -1, inheritedEventCount: 0, events }],
   })
   return { totals: projection.values.tokenUsage, settlement: settlement.type, usage, route: route.data, taskUsage }
 }
 
 try {
+  const fixture = new URL('./fixtures/usage-reader.mjs', import.meta.url).href
+  await writeFile(patch, `- insert:\n    - id: workbench-test-usage\n      name: ${JSON.stringify(fixture)}\n`)
   provider.listen(0, '127.0.0.1')
   await once(provider, 'listening')
   let rpc = await start()
+  const { workspace } = await rpc('workspace/create', { path: data })
   const sessions = []
   for (const prompt of samples.keys()) {
-    const { sessionId } = await rpc('session/create', { cwd: data })
+    const { sessionId } = await rpc('session/create', { workspaceId: workspace.workspaceId })
     await rpc('session/prompt', { sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: prompt }] })
     assert.equal((await rpc('session/wait', { sessionId, timeoutMs: 8_000 })).reason, 'idle')
     sessions.push(sessionId)
@@ -147,9 +154,16 @@ try {
   await stop()
   const callsBeforeColdReads = modelCalls
   assert.ok(callsBeforeColdReads >= samples.size, 'all fixture prompts reached the mock provider')
-  rpc = await start()
+  const output = join(data, 'usage-result.json')
+  rpc = await start({ workspaceId: workspace.workspaceId, taskId, output, sessions })
   const cold = await Promise.all(sessions.map(id => measure(rpc, id)))
   assert.deepEqual(cold, live)
+  const hostUsage = JSON.parse(await readFile(output, 'utf8'))
+  assert.equal(hostUsage.taskId, taskId)
+  assert.equal(hostUsage.completeness, 'partial')
+  assert.deepEqual(hostUsage.buckets, [{
+    provider: known.route.provider, model: known.route.model, uncachedInput: 10, output: 3, cacheRead: 0, cacheWrite: 0,
+  }])
   assert.equal(modelCalls, callsBeforeColdReads, 'reading restored usage makes no model calls')
   console.log('PASS: native usage shows totals, history route and available cache fields across restart; input/output omissions are indistinguishable from zero.')
   console.log('PASS: reported usage from a failed provider attempt survives restart and contributes to native totals.')
