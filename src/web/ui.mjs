@@ -233,6 +233,8 @@ function renderDetail() {
       area.append(row)
     }
     const decision = decisions.find(item => item.submissionId === submission.id)
+    const evidence = [...submission.evidence, ...(decision?.reviewEvidence ?? [])]
+    if (evidence.length) area.append(renderEvidence(submission, evidence))
     if (decision) area.append(node('p', decision.verdict === 'accept' ? '已验收' : `退回原因：${decision.reason}`))
     if (current && task.status === 'review') area.append(reviewEditor(submission))
     detail.append(area)
@@ -473,11 +475,31 @@ function recoveryEditor() {
   return section('会话待核对', node('p', '核对已创建的会话，或结束本次启动意图。'), form)
 }
 
+function renderEvidence(submission, evidence) {
+  const labels = { machine: '机器检查', user: '人工确认', 'model-claim': '模型说明', unverified: '未核验' }
+  const outcomes = { pass: '通过', fail: '失败', unknown: '未知' }
+  const names = new Map(submission.criteriaSnapshot.map(item => [item.id, item.description]))
+  const area = node('div', undefined, 'evidence')
+  area.append(node('h3', '验收证据'))
+  const items = node('ul')
+  for (const item of evidence) {
+    const line = node('li')
+    line.append(node('strong', `${labels[item.kind]} · ${outcomes[item.outcome]} · ${names.get(item.criterionId) ?? item.criterionId}`),
+      node('p', item.summary))
+    items.append(line)
+  }
+  area.append(items)
+  return area
+}
+
 function reviewEditor(submission) {
   const area = node('div')
   const fieldset = node('fieldset')
   fieldset.append(node('legend', '逐项确认'))
-  const checks = submission.criteriaSnapshot.map(item => {
+  const machine = submission.evidence.filter(item => item.kind === 'machine' && item.source !== null)
+  const failed = new Set(machine.filter(item => item.outcome === 'fail').map(item => item.criterionId))
+  const passed = new Set(machine.filter(item => item.outcome === 'pass').map(item => item.criterionId))
+  const checks = submission.criteriaSnapshot.filter(item => !failed.has(item.id) && !passed.has(item.id)).map(item => {
     const label = node('label', item.description)
     const check = node('input')
     check.type = 'checkbox'
@@ -490,17 +512,20 @@ function reviewEditor(submission) {
     submissionId: submission.id, verdict: 'accept', reason: null,
     confirmedCriteria: checks.filter(input => input.checked).map(input => input.value),
   }), 'primary')
-  approve.disabled = true
-  for (const check of checks) check.addEventListener('change', () => {
-    approve.disabled = checks.some(input => !input.checked)
-  })
+  function updateApproval() {
+    approve.disabled = failed.size > 0 || checks.some(input => !input.checked)
+  }
+  updateApproval()
+  for (const check of checks) check.addEventListener('change', updateApproval)
   const form = node('form', undefined, 'actions')
   const reason = node('input')
   reason.setAttribute('aria-label', '退回理由')
   reason.placeholder = '退回理由'
   reason.required = true
   form.append(approve, reason, node('button', '退回修改'))
-  area.append(fieldset, form)
+  if (checks.length) area.append(fieldset)
+  if (failed.size) area.append(node('p', '机器检查失败，请退回并重新提交。'))
+  area.append(form)
   form.addEventListener('submit', event => {
     event.preventDefault()
     void taskAction('task.decide', { submissionId: submission.id, verdict: 'return', reason: reason.value.trim() })

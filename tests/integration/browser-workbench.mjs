@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -16,6 +16,9 @@ const home = await mkdtemp(join(tmpdir(), 'workbench-browser-'))
 const workspace = join(home, 'workspace')
 const overlay = join(home, 'workbench.yml')
 const usagePolicy = join(home, 'usage-policy.json')
+const evidencePolicy = join(home, 'evidence-policy.json')
+const checkedTitle = 'browser checked artifact'
+const checkedRevision = 'browser checked revision'
 const attempts = new Map()
 let independentReviewRequests = 0
 
@@ -31,13 +34,14 @@ const provider = createServer(async (request, response) => {
       assert.doesNotMatch(serialized, /browser review task/)
       independentReviewRequests += 1
     }
-    const flow = ['browser material revision', 'browser material task', 'browser code task']
+    const flow = [checkedRevision, checkedTitle, 'browser material revision', 'browser material task', 'browser code task']
       .find(marker => serialized.includes(marker))
     const modeled = flow && body.tools?.some(tool => tool.name === 'present')
     const step = modeled ? (attempts.get(flow) ?? 0) + 1 : 0
     if (step) attempts.set(flow, step)
     const tool = step === 1 ? 'present' : step === 2 ? 'workbench_submit' : null
-    const filename = flow === 'browser code task' ? 'code.md' : 'materials.md'
+    const filename = flow === checkedRevision || flow === checkedTitle ? 'report.json'
+      : flow === 'browser code task' ? 'code.md' : 'materials.md'
     const args = tool === 'present' ? { files: [{ path: filename }] } : { selection: 'latest-presentation' }
     const events = [{
       type: 'message_start',
@@ -105,6 +109,11 @@ try {
   await mkdir(workspace)
   await writeFile(join(workspace, 'code.md'), 'Code change and checks')
   await writeFile(join(workspace, 'materials.md'), 'Initial version')
+  await writeFile(join(workspace, 'report.json'), '{broken')
+  await writeFile(evidencePolicy, JSON.stringify([{
+    workspace: await realpath(workspace), taskTitle: checkedTitle, criterionId: 'criterion-1',
+    description: 'JSON 格式有效', check: 'json', path: 'report.json',
+  }]))
   await writeFile(usagePolicy, JSON.stringify({
     rates: [{ provider: 'deepseek-official', model: 'deepseek-flash', currency: 'CNY', rateDate: '2020-01-01',
       perMillion: { uncachedInput: '1', cacheRead: '0.2', cacheWrite: '1', output: '2' } }],
@@ -112,7 +121,7 @@ try {
   }))
   execFileSync(process.execPath, [
     process.env.WORKBENCH_OVERLAY_GENERATOR ??
-      fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay, usagePolicy,
+      fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay, usagePolicy, '--evidence-policy', evidencePolicy,
   ])
   browser = await chromium.launch({
     ...(process.env.WORKBENCH_CHROME_PATH ? { executablePath: process.env.WORKBENCH_CHROME_PATH } : {}),
@@ -158,13 +167,14 @@ try {
   const goalStart = '材料检索与核验\n<review>'
   const goalEnd = '</review>'
   const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
-  async function create(title, template, goal = '交付并核查该工作') {
+  async function create(title, template, goal = '交付并核查该工作', criteria) {
     await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
     await tabTo(page.getByLabel('标题'))
     await page.keyboard.insertText(title)
     await tabTo(page.getByLabel('目标'))
     await page.keyboard.insertText(goal)
+    if (criteria) await page.getByLabel(/验收条件/).fill(criteria)
     await activate(button('保存任务'))
     await page.getByRole('heading', { name: title }).waitFor()
     await activate(button('标为就绪'))
@@ -239,10 +249,36 @@ try {
   await page.getByText('已发给主 Agent', { exact: true }).waitFor()
   assert.equal(independentReviewRequests, 1)
 
+  await create(checkedTitle, 'development', '交付 JSON', 'JSON 格式有效\n与任务主题相符')
+  await waitReview()
+  await page.getByText('机器检查 · 失败 · JSON 格式有效', { exact: true }).waitFor()
+  const manual = page.getByRole('checkbox', { name: '与任务主题相符' })
+  await manual.check()
+  assert.equal(await button('接受提交').isDisabled(), true)
+  await writeFile(join(workspace, 'report.json'), '{"ready":true}')
+  await page.getByLabel('退回理由').fill('请重新提交有效的 JSON')
+  await button('退回修改').click()
+  await page.getByLabel('发给 Agent').fill(checkedRevision)
+  await button('发送').click()
+  await waitReview()
+  await page.getByText('机器检查 · 通过 · JSON 格式有效', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('checkbox', { name: 'JSON 格式有效' }).count(), 0)
+  const decisionRequest = page.waitForRequest(request => request.url().endsWith('/workbench/v1/command') &&
+    request.method() === 'POST' && request.postDataJSON().operation === 'task.decide')
+  await accept()
+  assert.deepEqual((await decisionRequest).postDataJSON().input.confirmedCriteria, ['criterion-2'])
+  await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
+  await stop()
+  await openWorkbench(await start())
+  await page.getByRole('button', { name: /browser checked artifact/ }).click()
+  await page.getByText('机器检查 · 通过 · JSON 格式有效', { exact: true }).waitFor()
+  await page.getByText('机器检查 · 失败 · JSON 格式有效', { exact: true }).waitFor()
+  await page.getByText('人工确认 · 通过 · 与任务主题相符', { exact: true }).waitFor()
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, and mobile layout.')
+  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, drift, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()

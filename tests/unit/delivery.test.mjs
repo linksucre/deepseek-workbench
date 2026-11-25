@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { z } from 'zod'
+import { createArtifactChecks } from '../../src/delivery/artifact-checks.mjs'
 import { createLocalFiles } from '../../src/delivery/local-files.mjs'
 import { observeArtifactVersions, resolveMachineEvidence, resolvePresentation } from '../../src/delivery/submission.mjs'
 
@@ -78,4 +80,34 @@ test('machine evidence admits only stage-bound host checks for known criteria an
   assert.equal(evidence.length, 1)
   assert.equal(evidence[0].outcome, 'fail')
   assert.deepEqual(JSON.parse(evidence[0].source.locator), [sessionId, 7])
+})
+
+test('fixed checks record the observed file version, task criterion and authorized presentation', async t => {
+  const f = await fixture(t)
+  const locator = f.files.normalize('report.json')
+  const title = 'Convert report'
+  const task = { title, criteria: [{ id: 'json', description: 'Parse JSON' }, { id: 'size', description: 'Nonempty report' }] }
+  const rules = task.criteria.map(({ id, description }) => ({
+    workspace: f.files.root, taskTitle: title, criterionId: id, description, path: 'draft/report.json',
+    check: id === 'json' ? 'json' : 'nonempty',
+  }))
+  const check = createArtifactChecks({ z, policy: rules })
+  assert.throws(() => createArtifactChecks({ z, policy: [rules[0], rules[0]] }), /duplicate/i)
+  assert.throws(() => createArtifactChecks({ z, policy: [{ ...rules[0], path: '../report.json' }] }))
+
+  const source = { kind: 'session-event', locator: JSON.stringify([sessionId, 6, 0]), observedAt: now }
+  const run = async contents => {
+    await writeFile(locator, contents)
+    const artifact = { locator, version: await f.files.digest(locator), source }
+    return { task, files: f.files, artifacts: [artifact], now }
+  }
+  const good = await run('{"x":1}')
+  assert.deepEqual((await check(good)).map(({ kind, criterionId, outcome, source: ref }) =>
+    [kind, criterionId, outcome, ref]), [['machine', 'json', 'pass', source], ['machine', 'size', 'pass', source]])
+  assert.deepEqual(await check({ ...good, task: { ...task, title: 'Different task' } }), [])
+  assert.deepEqual(await check({ ...good, files: { root: f.tmp } }), [])
+  await assert.rejects(check({ ...good, artifacts: [] }), { code: 'INVALID' })
+  assert.deepEqual((await check(await run(Buffer.from([0x22, 0xff, 0x22])))).map(item => item.outcome), ['fail', 'pass'])
+  assert.deepEqual((await check(await run(''))).map(item => item.outcome), ['fail', 'fail'])
+  await assert.rejects(check(good), { code: 'ARTIFACT_DRIFT' })
 })

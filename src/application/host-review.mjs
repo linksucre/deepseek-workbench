@@ -3,8 +3,9 @@ import { createHostDelivery } from '../delivery/host-delivery.mjs'
 import { TaskError } from '../domain/task.mjs'
 
 /** Delivery policy for the local single-owner profile. */
-export function createHostReview(ctx, { owner, isBoundCaller }) {
+export function createHostReview(ctx, { owner, isBoundCaller, checkArtifacts }) {
   const native = createHostDelivery({
+    checkArtifacts,
     sessionQuery: ctx.sessionQuery,
     workspaceRegistry: ctx.workspaceRegistry,
     canUseWorkspace: ({ principal, task }) => principal === owner || isBoundCaller(principal, task.workspaceId),
@@ -25,10 +26,9 @@ export function createHostReview(ctx, { owner, isBoundCaller }) {
         const [, seq] = JSON.parse(artifact.source.locator)
         if (Number.isSafeInteger(seq)) afterSeq = Math.max(afterSeq, seq)
       }
-      const artifacts = await native.resolveArtifacts({
+      return native.resolveSubmission({
         record, principal, afterSeq, selection: input.selection, now, newArtifactId: randomUUID,
       })
-      return { artifacts, evidence: [] }
     },
     observe: input => native.observe(input),
   }

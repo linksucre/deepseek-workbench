@@ -60,3 +60,20 @@ node /path/to/local-install/node_modules/deepseek-workbench/scripts/source-overl
 修改本地费率后重启整个工作台 profile。软预算适用于该 profile 的每个任务，只提醒，不停止模型。配置中无需填写凭据。
 
 DEV-005 评审分支使用本机隔离的 Harness 补丁，按 [任务记录保护评审](design/TASK-RECORD-PRESERVATION.md) 验证。工作台遇到损坏记录时拒绝挂载，标准 Harness 会话仍可用。保留故障目录，从已核对备份创建独立 profile 并复验后恢复写入。
+
+## 配置固定产物检查
+
+生成 overlay 时可加 `--evidence-policy /path/to/checks.json`。部署文件为数组，规则匹配工作区的真实绝对路径、任务标题、条件 ID 和完整原文。对于工作台表单创建的任务，验收条件的 ID 是 `criterion-1`、`criterion-2` 等，顺序与表单一致。路径以工作区为基准，须指向当前提交选中的文件。支持 `nonempty` 和 `json`，后者要求合法 UTF-8 JSON，最多 1 MiB。
+
+```json
+[{
+  "workspace": "/absolute/path/to/workspace",
+  "taskTitle": "汇总销售数据",
+  "criterionId": "criterion-1",
+  "description": "JSON 格式有效",
+  "path": "outputs/report.json",
+  "check": "json"
+}]
+```
+
+在已有命令末尾追加该选项，可以同时保留第三个位置参数的用量配置。修改规则后重启独立 profile。移除配置可恢复逐项人工验收，历史提交流程仍能读取已保存的证据。

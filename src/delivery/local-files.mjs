@@ -30,7 +30,7 @@ export async function createLocalFiles({ root, cwd = root, authorizePath, maxByt
     return target
   }
 
-  async function digest(path) {
+  async function inspect(path, { captureBytes = 0 } = {}) {
     const target = normalize(path)
     if (await authorizePath(target) !== true) throw new TaskError('FORBIDDEN', 'Presented file access denied')
     try {
@@ -44,6 +44,8 @@ export async function createLocalFiles({ root, cwd = root, authorizePath, maxByt
         if (!opened.isFile() || !sameVersion(before, opened) || await realpath(target) !== target) throw fail()
         const hash = createHash('sha256')
         const buffer = Buffer.allocUnsafe(Math.min(maxBytes, 64 * 1024))
+        const bytes = captureBytes > 0 && opened.size <= BigInt(captureBytes)
+          ? Buffer.alloc(Number(opened.size)) : undefined
         let total = 0
         for (;;) {
           const { bytesRead } = await handle.read(buffer)
@@ -51,11 +53,15 @@ export async function createLocalFiles({ root, cwd = root, authorizePath, maxByt
           total += bytesRead
           if (total > maxBytes) throw fail()
           hash.update(buffer.subarray(0, bytesRead))
+          if (bytes) {
+            if (total > bytes.length) throw fail()
+            bytes.set(buffer.subarray(0, bytesRead), total - bytesRead)
+          }
         }
         const after = await handle.stat({ bigint: true })
         const current = await lstat(target, { bigint: true })
         if (BigInt(total) !== opened.size || !sameVersion(opened, after) || !sameVersion(after, current) || await realpath(target) !== target) throw fail()
-        return hash.digest('hex')
+        return { version: hash.digest('hex'), size: total, bytes }
       } finally {
         await handle.close()
       }
@@ -64,5 +70,8 @@ export async function createLocalFiles({ root, cwd = root, authorizePath, maxByt
       throw fail()
     }
   }
-  return { normalize, digest }
+  return {
+    root: canonicalRoot, normalize, inspect,
+    async digest(path) { return (await inspect(path)).version },
+  }
 }

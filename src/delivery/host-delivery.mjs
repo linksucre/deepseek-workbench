@@ -9,7 +9,7 @@ const unavailable = () => new TaskError('NOT_FOUND', 'No authorized task deliver
  * Bind delivery reads to a trusted, already authorized task Run.
  * These callbacks are Host policy decisions and are never provided by the model.
  */
-export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWorkspace, canReadFile }) {
+export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWorkspace, canReadFile, checkArtifacts = () => [] }) {
   if (typeof canUseWorkspace !== 'function' || typeof canReadFile !== 'function') {
     throw new TypeError('Host delivery requires workspace and file authorizers')
   }
@@ -35,23 +35,30 @@ export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWork
         cwd,
         authorizePath: path => canReadFile({ principal, task, run, path }),
       })
-      return await action({ sessionId: run.rootSessionId, events, files })
+      return await action({ sessionId: run.rootSessionId, task, events, files })
     } finally {
       observation[Symbol.dispose]()
     }
   }
 
-  return {
-    resolveArtifacts(input) {
-      return read(input, ({ sessionId, events, files }) => {
-        const observedThrough = events.at(-1)?.seq ?? -1
-        const beforeSeq = Math.min(observedThrough + 1, input.beforeSeq ?? observedThrough + 1)
-        return resolvePresentation({
-          sessionId, events, files,
-          stage: { afterSeq: input.afterSeq, beforeSeq },
-          selection: input.selection, now: input.now, newArtifactId: input.newArtifactId,
-        })
+  function resolveSubmission(input) {
+    return read(input, async ({ sessionId, task, events, files }) => {
+      const observedThrough = events.at(-1)?.seq ?? -1
+      const beforeSeq = Math.min(observedThrough + 1, input.beforeSeq ?? observedThrough + 1)
+      const artifacts = await resolvePresentation({
+        sessionId, events, files,
+        stage: { afterSeq: input.afterSeq, beforeSeq },
+        selection: input.selection, now: input.now, newArtifactId: input.newArtifactId,
       })
+      const evidence = await checkArtifacts({ task, files, artifacts, now: input.now })
+      return { artifacts, evidence }
+    })
+  }
+
+  return {
+    resolveSubmission,
+    async resolveArtifacts(input) {
+      return (await resolveSubmission(input)).artifacts
     },
 
     observe(input) {

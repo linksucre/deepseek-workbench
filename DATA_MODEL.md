@@ -15,3 +15,5 @@ Decision 可以附带 reviewEvidence。每条用户确认绑定已发布 Submiss
 UsageSummary 可附部署侧 softBudget，包含十进制金额、币种及比较结果。预算仅用于展示，费率与预算来自独立本地配置，不写入任务或会话。
 
 ReviewRecord 是独立审阅投影，绑定 Run 和 Host 预留的子会话 ID。状态为 reserved、completed 或 incomplete。请求人与操作摘要存于内部记录，所选材料只写入原生子会话。仅有已确认亲缘关系的子会话记入 Run，其第一轮的截止游标用于缩小用量范围。
+
+固定检查的机器证据通过 `source` 引用提交所选产物的同一展示事件位置。检查输入与该产物的 SHA-256 在同一次稳定读取中复核。每份历史提交保留自己的证据快照。

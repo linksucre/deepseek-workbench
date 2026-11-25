@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { TaskError } from '../domain/task.mjs'
 import { openTaskRepository } from '../storage/task-repository.mjs'
+import { createArtifactChecks } from '../delivery/artifact-checks.mjs'
 import { createHostReview } from './host-review.mjs'
 import { mountWorkbenchTools } from './host-tools.mjs'
 import { createHostTaskUsage } from '../usage/host-usage.mjs'
@@ -49,7 +50,7 @@ async function readBody(req) {
  * Mount the explicit local owner command carrier. The logical operation shapes
  * stay in contracts/v1. The caller supplies the pinned Host storage/schema APIs.
  */
-export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, delivery, usagePolicy }) {
+export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, delivery, usagePolicy, evidencePolicy }) {
   if (!loopback.has(ctx.webServer.host)) throw new Error('Workbench commands require a loopback listener')
   const schema = await readJSON('../../contracts/v1/schemas.json')
   const index = await readJSON('../../contracts/v1/operations.json')
@@ -72,7 +73,9 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
   const isBoundCaller = (principal, workspaceId) => toolPrincipals.has(principal) &&
     principal.workspaceId === workspaceId && ctx.workspaceRegistry.get(workspaceId)?.sessionIds.includes(principal.sessionId)
   const app = createTaskService({
-    repository, delivery: delivery ?? createHostReview(ctx, { owner, isBoundCaller }),
+    repository, delivery: delivery ?? createHostReview(ctx, { owner, isBoundCaller,
+      checkArtifacts: createArtifactChecks({ z, policy: evidencePolicy }),
+    }),
     authorize: ({ principal, workspaceId }) => (principal === owner || isBoundCaller(principal, workspaceId)) &&
       ctx.workspaceRegistry.get(workspaceId) !== undefined,
   })
