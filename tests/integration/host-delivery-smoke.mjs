@@ -11,6 +11,15 @@ import { fileURLToPath } from 'node:url'
 const checkout = resolve(process.argv[2] ?? '.')
 const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json', import.meta.url)))
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
+const checkReviewRecovery = process.argv.includes('--review-recovery-regressions')
+const reviewFailures = []
+function expectReviewRecovery(name, actual, expected) {
+  try {
+    assert.deepEqual(actual, expected, name)
+  } catch (error) {
+    reviewFailures.push(error)
+  }
+}
 const root = await mkdtemp(join(tmpdir(), 'dsh-host-delivery-'))
 const patch = join(root, 'test.patch.yml')
 const data = join(root, 'dsh')
@@ -496,6 +505,19 @@ try {
   const beforeForwardReplay = allModelRequests
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), { sessionId: parentId, accepted: true })
   assert.equal(allModelRequests, beforeForwardReplay)
+  if (checkReviewRecovery) {
+    const collisionInput = { ...forward, requestId: 'shared-key' }
+    const ordinary = { taskId: fresh.task.id, expectedRevision: reviewedTask.task.revision,
+      requestId: 'review-forward:shared-key', text: 'Ordinary prompt with an independent public request ID' }
+    await rpc.workbench('task.prompt', ordinary)
+    const result = await rpc.workbench('task.review.forward', collisionInput, { status: [200, 400, 409] })
+    expectReviewRecovery('Forward and prompt request IDs have independent native scopes',
+      result, { sessionId: parentId, accepted: true })
+    await until(async () => {
+      const conversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 30 })
+      return !conversation.running && conversation.messages.some(message => message.text === ordinary.text)
+    }, 'ordinary prompt with a potentially colliding request ID')
+  }
   const beforeRecoveryUsage = await rpc.workbench('task.usage', { taskId: fresh.task.id })
   assert.equal(beforeRecoveryUsage.completeness, 'complete')
   const recoveryInput = { ...reviewInput, expectedRevision: reviewedTask.task.revision,
@@ -728,6 +750,49 @@ try {
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)
+  if (checkReviewRecovery) {
+    const beforeReplayedReview = allModelRequests
+    const replayedReview = await rpc.workbench('task.review.reconcile', reconcile, { status: [200, 400, 409] })
+    expectReviewRecovery('Identical review reconciliation replays after restart', replayedReview, recovered)
+    const alteredReview = await rpc.workbench('task.review.reconcile', { ...reconcile, reviewId: review.reviewId },
+      { status: [200, 400, 409] })
+    const alteredRevision = await rpc.workbench('task.review.reconcile', { ...reconcile,
+      expectedRevision: reconcile.expectedRevision + 1 }, { status: [200, 400, 409] })
+    expectReviewRecovery('A reused reconcile request ID rejects another review ID and another revision',
+      [alteredReview.code, alteredRevision.code], ['INVALID', 'INVALID'])
+    expectReviewRecovery('Review receipt replay performs no model calls', allModelRequests, beforeReplayedReview)
+
+    const coldTaskId = unrelated.task.id
+    const coldRootId = unrelated.runs[0].rootSessionId
+    const beforeColdCalls = allModelRequests
+    const beforeColdDetail = await rpc.workbench('task.get', { taskId: coldTaskId })
+    const coldResults = []
+    for (const requestId of ['cold-review-a', 'cold-review-b']) {
+      const current = await rpc.workbench('task.get', { taskId: coldTaskId })
+      const result = await rpc.workbench('task.delegate', { taskId: coldTaskId, requestId,
+        expectedRevision: current.task.revision, instruction: 'Check the brief', material: 'Cold review fixture' },
+        { status: [200, 409] })
+      coldResults.push(result.code ?? result.status)
+    }
+    const afterCold = await rpc.workbench('task.get', { taskId: coldTaskId })
+    const storedReviews = (await rpc.workbench('task.reviews', { taskId: coldTaskId })).items
+    expectReviewRecovery('Cold root rejects before reserving a review or spending its allowance',
+      { outcomes: coldResults, revision: afterCold.task.revision, reviews: storedReviews.length,
+        addedCalls: allModelRequests - beforeColdCalls },
+      { outcomes: ['INVALID_TRANSITION', 'INVALID_TRANSITION'], revision: beforeColdDetail.task.revision, reviews: 0, addedCalls: 0 })
+    await rpc.workbench('task.prompt', { taskId: coldTaskId, requestId: 'activate-cold-root',
+      expectedRevision: afterCold.task.revision, text: 'Owner activates the root before review' })
+    await until(async () => (await rpc('session/list', {})).items.some(item =>
+      item.sessionId === coldRootId && !item.running && !item.blank), 'owner activation of the cold root')
+    const restoredReview = await rpc.workbench('task.delegate', { taskId: coldTaskId, requestId: 'review-after-activation',
+      expectedRevision: afterCold.task.revision, instruction: 'Check the brief', material: 'Cold review fixture' },
+      { status: [200, 409] })
+    expectReviewRecovery('The owner can still delegate after activating the cold root',
+      restoredReview.status ?? restoredReview.code, 'completed')
+
+    if (reviewFailures.length) throw new AggregateError(reviewFailures, 'DEV-011 review recovery regressions')
+    console.log('PASS: cold-root admission, reconciliation replay, and independent forward request IDs.')
+  }
   console.log('PASS: native authorization, task context, delivery, evidence rejection, concurrent submission and acceptance, cold replay, startup crash and late receipt, isolated review, corrupt-record protection, and profile restore.')
 } finally {
   releaseForged()

@@ -18,3 +18,5 @@
 本地 M0 门禁先运行 `npm ci`，再运行 `npm run check` 和 `npm run test:smoke -- /path/to/built/deepseek-harness`。CI 从固定提交构建上游，运行相同集成脚本。真实模型试跑属于 M1 验收，单独保存脱敏证据。失败应记范围、复现、预期及实际，避免把跳过写成通过。
 
 [Harness integration](.github/workflows/ci.yml) 在 macOS 上运行上下文冒烟、原生 worktree 写入隔离试验和分页基准。worktree 试验使用临时 Git 仓库，验证两条分支的写入隔离和冲突后的结果保留。分页输出包括机器、Node 版本、样本数及 p95。浏览器使用独立安装的本地归档。
+
+DEV-011 修订回归使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-recovery-regressions`，核对冷根派发配额、显式核对请求摘要及回送与普通消息的作用域。当前候选已知失败，评审后的实现需在同一预期下通过，再纳入默认门禁。
