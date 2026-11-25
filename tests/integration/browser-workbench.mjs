@@ -317,6 +317,14 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result.error))
     return result.value.items.map(item => item.sessionId)
   }
+  async function readWorkbench(operation, input) {
+    const endpoint = new URL('/workbench/v1/command', page.url())
+    const response = await page.request.post(endpoint.href, {
+      headers: { origin: endpoint.origin }, data: { operation, input },
+    })
+    assert.equal(response.status(), 200, operation)
+    return (await response.json()).result
+  }
   async function waitTaskState(label) {
     await taskState.getByText(label, { exact: true }).waitFor()
     await page.locator('body:not([aria-busy])').waitFor()
@@ -539,14 +547,63 @@ try {
   await currentEvidence.locator('summary').click()
   await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
   assert.equal(await page.getByRole('checkbox', { name: 'JSON 格式有效' }).count(), 0)
-  const decisionRequest = page.waitForRequest(request => request.url().endsWith('/workbench/v1/command') &&
-    request.method() === 'POST' && request.postDataJSON().operation === 'task.decide')
-  await accept()
-  assert.deepEqual((await decisionRequest).postDataJSON().input.confirmedCriteria, ['criterion-2'])
-  await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
+  const checkedScope = await page.getByLabel('工作区', { exact: true }).inputValue()
+  async function listedCheckedTasks() {
+    const { items, nextCursor } = await readWorkbench('task.list', { workspaceId: checkedScope, limit: 50, cursor: null })
+    assert.equal(nextCursor, null)
+    return items.filter(task => task.title === checkedTitle).map(task => task.id)
+  }
+  const checkedTasks = await listedCheckedTasks()
+  assert.equal(checkedTasks.length, 1)
+  const taskId = checkedTasks[0]
+  const beforeAcceptance = await readWorkbench('task.get', { taskId })
+  assert.equal(beforeAcceptance.task.status, 'review')
+  const acceptanceAttempts = []
+  async function loseFirstAcceptanceResponse(route) {
+    const { operation, input } = route.request().postDataJSON() ?? {}
+    if (operation !== 'task.decide' || input.taskId !== taskId || input.verdict !== 'accept') return route.continue()
+    const response = await route.fetch()
+    acceptanceAttempts.push({ input, status: response.status(), body: await response.json() })
+    // Commit through the real Host, then simulate a connection failure before the UI receives the result.
+    if (acceptanceAttempts.length === 1) return route.abort('connectionreset')
+    return route.fulfill({ response })
+  }
+  let acceptedTask
+  await page.route(commandRoute, loseFirstAcceptanceResponse)
+  try {
+    await accept()
+    await page.locator('#feedback[data-error]').waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+    assert.equal(acceptanceAttempts.length, 1)
+    const first = acceptanceAttempts[0]
+    assert.equal(first.status, 200)
+    assert.deepEqual(first.input.confirmedCriteria, ['criterion-2'])
+    assert.equal(first.input.expectedRevision, beforeAcceptance.task.revision)
+    acceptedTask = first.body.result
+    assert.equal(acceptedTask.task.status, 'accepted')
+    assert.equal(acceptedTask.task.revision, beforeAcceptance.task.revision + 1)
+    assert.deepEqual(acceptedTask.submissions, beforeAcceptance.submissions)
+    assert.deepEqual(acceptedTask.decisions.slice(0, -1), beforeAcceptance.decisions)
+    assert.equal(acceptedTask.decisions.at(-1).submissionId, first.input.submissionId)
+    assert.equal(acceptedTask.decisions.at(-1).verdict, 'accept')
+    assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
+    assert.equal(await manual.isChecked(), true)
+
+    await activate(button('接受提交'))
+    await waitTaskState('已验收')
+    assert.equal(acceptanceAttempts.length, 2)
+    assert.deepEqual(acceptanceAttempts[1], first)
+    assert.deepEqual(await listedCheckedTasks(), checkedTasks)
+    assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
+  } finally {
+    await page.unroute(commandRoute, loseFirstAcceptanceResponse)
+  }
   await stop()
   await openWorkbench(await start({ failAttach: true }))
-  await page.getByRole('button', { name: /browser checked artifact/ }).click()
+  await taskButton(checkedTitle).click()
+  await waitTaskState('已验收')
+  assert.deepEqual(await listedCheckedTasks(), checkedTasks)
+  assert.deepEqual(await readWorkbench('task.get', { taskId }), acceptedTask)
   await currentEvidence.locator('summary').click()
   await page.locator('.submission-evidence').last().locator('summary').click()
   await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
@@ -635,7 +692,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium workspace switching, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium workspace switching, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, lost acceptance response replay, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
