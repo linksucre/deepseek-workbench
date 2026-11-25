@@ -56,6 +56,7 @@
 | `DEV-012` | Codex | `dev/DEV-012-recovery-verification` | 基于 `f8a83a8` 验证 TST-003 的真实 Host 并发、回执及启动中断 |
 | `DEV-012` | Codex | `dev/DEV-012-authorization-verification` | 基于 `90fcfc1` 补验 TST-002、TST-004 的认证、工作区范围、终态和模型证据边界 |
 | `DEV-012` | Codex | `dev/DEV-012-real-task-fixtures` | 从 `714357a` 准备 TST-005 的四项本地试跑材料、判定和留证说明，先验证材料可用性 |
+| `DEV-012` | Codex | `dev/DEV-012-native-skill-trial` | 从 `f496ba6` 验证模拟模型选择复用时的实际原生技能加载、用户改选和冷读，仅修改联调测试及说明 |
 | `DEV-012` | Codex 协作 Agent | `dev/DEV-012-explicit-delivery-verification` | 从 `99f1668` 核对真实宿主按文件选择的成功提交、证据来源及请求重放 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-isolation-trial` | 原生 worktree 写入隔离、保留分支和合并冲突试验；独立于审阅入口 |
 | `DEV-011` | Codex | `dev/DEV-011-worktree-trial-path-check` | 从 `0842987` 在创建夹具前检查 macOS 原生隔离试验的路径前提，仅修改对应测试和说明 |
@@ -286,3 +287,5 @@ DEV-002 确认 Workbench 已配置公开 GitHub 远端。复核期间远端 `mai
 DEV-002 从 `origin/main` 当前基线独立比较 `fcbc680`。基于可拉取的公开 Harness `4b399c39a6`，加强版 M0 通过 npm 锁文件安装、两项门禁回归、差异文档门禁、actionlint 和真实 Host 冒烟。该版本逐项验证模型请求包含文件、查证、技能及交付工具，并验证标准预设隔离。此轮本地结果未计为远端 CI。
 
 DEV-002 远端首轮 macOS 作业 `139310091031` 因 GitHub 托管 runner 容量，在未分配 runner、未执行任何步骤的情况下结束。重试同一提交 `e252c32` 后，[第二轮 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45644047839/attempts/2) 的 `Repository gate` 和 `Harness integration` 均通过。作业 `139321219573` 成功检出公开 Harness 基线，10 个构建门禁和模拟模型预设冒烟通过。此轮复用原工作流及保护规则。候选验收表本地提交 `f496ba6` 已记入 M0 结果，M3 仍需自己的远端验证。
+
+DEV-012 `1b3d2c4` 的 TST-005 模拟预检通过。在真实 Host 的独立技能目录创建写作夹具，验证原生目录列出技能、`skill` 返回正文、`workbench_suggest` 保存 `reuse` 和技能 ID，用户改选后从备份冷读保留前后两个来源。真实 Host 全量及三个审阅专项、27 项回归、仓库门禁与 actionlint 通过，本地候选已更新。真实模型试跑仍待授权。复查远端仍无评审 PR，上游保护版 Harness 仍返回 `not our ref`。
