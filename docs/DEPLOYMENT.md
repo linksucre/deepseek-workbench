@@ -28,6 +28,25 @@ DSH_HOME="$HOME/Library/Application Support/DeepSeek Harness Workbench" \
 
 TST-007 在固定上游版本，用已停止的独立 profile 验证同版本停用和恢复。停用副本去掉 overlay 后，标准 Web Host 仍能读取原生会话，工作台命令停止提供服务。恢复时复制备份到新目录，使用原 overlay 核对任务、操作回执和绑定的原生会话。上游版本不同的回滚需另行验证。
 
+### 备份和恢复独立 profile
+
+停止正在写入该 profile 的 Harness Host。记录 Workbench、Harness 和 overlay 版本。以下命令适用于任务域和会话都位于独立 profile 的本机 JSON 部署。部署若使用外部存储目录或后端，按其备份方式取得同一时点的副本，恢复配置也指向副本。将示例路径替换为使用中的 profile 和已存在的备份父目录。
+
+```sh
+(
+  umask 077
+  profile_dir=$(cd '/path/to/stopped-profile' && pwd -P) &&
+  backup_parent='/path/to/local-backups' &&
+  backup_dir=$(mktemp -d "$backup_parent/workbench-backup.XXXXXXXX") &&
+  cp -pRP "$profile_dir" "$backup_dir/profile" &&
+  printf '%s\n' "$backup_dir/profile"
+)
+```
+
+恢复时将备份的 `profile` 作为上述输入，将恢复位置作为父目录。把输出的新副本设为 `DSH_HOME`，用记录的 Harness 版本和 overlay 在本机另起进程。核对任务数、关键任务的 revision、启动意图、提交与验收历史、原生会话绑定以及已知请求的回执，再恢复正常写入。若遇到不可读记录，保留故障目录，并从已验证的较早备份另建副本。停用验证使用独立副本和同版本的标准 Web profile。
+
+完整 profile 可能包含用户工作内容和宿主凭据，应保留在授权维护者可访问的本机备份目录。业务快照的范围见 [数据库说明](../DATABASE.md#备份与业务导出)。
+
 当前私有 manifest 供本地开发，发布形态需通过上游安装能力工单确认。
 
 本地入口以已构建源码为安装载体。当前版本通过源码 overlay 部署完整 Host，预设 bundle 继续作为单独入口。已用本地归档安装和浏览器双链路验证源代码资产与运行依赖。
