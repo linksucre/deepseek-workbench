@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const checkout = resolve(process.argv[2] ?? '.')
@@ -38,7 +38,8 @@ let forgedResult
 let releaseForged
 const forgedGate = new Promise(resolve => { releaseForged = resolve })
 const forgedToolId = 'workbench-forged-evidence-probe'
-let concurrentPresentation = false
+let ownerPresentationCount = 0
+const ownerPresentationFiles = ['first.md', 'second.md']
 const submitMarker = 'Workbench owner submission concurrency probe'
 let allModelRequests = 0
 let reviewRequest
@@ -77,10 +78,10 @@ const provider = createServer(async (request, response) => {
     const omitCacheUsage = step === 6 || messages.includes('review recovery probe')
     const suggest = !step && body.tools?.some(tool => tool.name === 'workbench_suggest') &&
       JSON.stringify(body.messages).includes(suggestionMarker) && ++suggestionSteps === 1
-    const manualPresentation = !concurrentPresentation && body.tools?.some(tool => tool.name === 'present') &&
-      JSON.stringify(body.messages).includes(submitMarker)
-    if (manualPresentation) concurrentPresentation = true
-    const filename = manualPresentation ? 'first.md' : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
+    const manualPresentation = ownerPresentationCount < ownerPresentationFiles.length &&
+      body.tools?.some(tool => tool.name === 'present') && messages.includes(submitMarker)
+    const filename = manualPresentation
+      ? ownerPresentationFiles[ownerPresentationCount++] : { 1: 'first.md', 2: 'second.md', 6: 'second.md' }[step]
     const name = suggest ? 'workbench_suggest'
       : filename ? 'present' : [3, 4, 7].includes(step) ? 'workbench_submit' : undefined
     const forged = step === 3
@@ -93,9 +94,11 @@ const provider = createServer(async (request, response) => {
       message: { id: randomUUID(), model: 'mock-model', usage: { input_tokens: 4, output_tokens: 0, ...(!omitCacheUsage && { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }) } },
     }]
     if (name) {
+      const callId = forged ? forgedToolId : manualPresentation
+        ? `tool-owner-present-${ownerPresentationCount}` : `tool-${name}-${step}`
       events.push(
         { type: 'content_block_start', index: 0,
-          content_block: { type: 'tool_use', id: forged ? forgedToolId : `tool-${name}-${step}`, name, input: {} } },
+          content_block: { type: 'tool_use', id: callId, name, input: {} } },
         { type: 'content_block_delta', index: 0,
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(args) } },
       )
@@ -287,6 +290,14 @@ try {
   assert.equal(attached.task.status, 'active')
   assert.equal(attached.runs[0].rootSessionId, sessionId)
   assert.deepEqual(await rpc.workbench('task.reconcile', attach), attached)
+  for (const changed of [
+    { ...attach, rootSessionId: 'different-root' },
+    { ...attach, expectedRevision: attach.expectedRevision + 1 },
+    { ...attach, action: 'discard-intent', rootSessionId: null },
+  ]) {
+    assert.equal((await rpc.workbench('task.reconcile', changed, { status: 400 })).code, 'INVALID')
+  }
+  assert.deepEqual(await rpc.workbench('task.get', { taskId }), attached)
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId), [sessionId])
   assert.deepEqual((await rpc('workspace/create', { path: root })).workspace.sessionIds, [sessionId])
   const idle = async () => (await rpc('session/list', {})).items.some(item =>
@@ -450,19 +461,27 @@ try {
   assert.deepEqual(await rpc.workbench('task.start', freshStart), freshActive)
   assert.equal((await rpc('session/list', {})).items.length, 2)
   const parentId = freshActive.runs[0].rootSessionId
+  const parentHistory = 'parent-only history marker'
   await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: freshActive.task.revision,
-    requestId: 'parent-history', text: 'parent-only history marker' })
+    requestId: 'parent-history', text: parentHistory })
   await until(async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === parentId && !item.running && !item.blank), 'review parent history committed')
+  const parentConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 20 })
+  const parentMessage = parentConversation.messages.find(item => item.role === 'user' && item.text === parentHistory)
+  assert.equal(parentConversation.sessionId, parentId)
+  assert.ok(Number.isSafeInteger(parentMessage?.seq))
   const reviewParent = await rpc.workbench('task.get', { taskId: fresh.task.id })
   assert.deepEqual(reviewParent.runs[0].childSessionIds, [])
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
   const beforeDenied = allModelRequests
+  const instruction = 'Check the selected brief'
+  const materialPrefix = 'review isolation probe\n请核对“材料”\n'
+  const material = materialPrefix + 'x'.repeat(24 * 1024 - Buffer.byteLength(instruction + materialPrefix))
   const reviewInput = { taskId: fresh.task.id, expectedRevision: reviewParent.task.revision, requestId: 'review',
-    instruction: 'Check the selected brief', material: 'review isolation probe' }
+    instruction, material }
   await rpc.workbench('task.delegate', reviewInput, { anonymous: true, status: 401 })
   await rpc.workbench('task.delegate', { ...reviewInput, taskId: randomUUID() }, { status: 404 })
-  await rpc.workbench('task.delegate', { ...reviewInput, material: '材'.repeat(9000) }, { status: 400 })
+  await rpc.workbench('task.delegate', { ...reviewInput, material: material + 'x' }, { status: 400 })
   await rpc.workbench('task.delegate', { ...reviewInput, childSessionId: parentId }, { status: 400 })
   assert.equal(allModelRequests, beforeDenied)
   assert.deepEqual((await rpc.workbench('task.reviews', { taskId: fresh.task.id })).items, [])
@@ -473,7 +492,11 @@ try {
   try {
     await until(() => reviewRequest, 'restricted reviewer model request')
     assert.deepEqual(reviewRequest.tools ?? [], [])
+    assert.equal(reviewRequest.max_tokens, 1024)
     assert.match(JSON.stringify(reviewRequest.system), /independent reviewer/i)
+    const sentText = reviewRequest.messages.filter(message => message.role === 'user')
+      .flatMap(message => message.content).map(block => block.text)
+    assert.ok(sentText.includes(JSON.stringify({ instruction, material })), 'reviewer received the complete selected material')
     assert.doesNotMatch(JSON.stringify(reviewRequest.messages), /parent-only history marker/)
     const pendingReviews = await rpc.workbench('task.reviews', { taskId: fresh.task.id })
     reserved = pendingReviews.items[0]
@@ -659,10 +682,18 @@ try {
   const ownerStage = await rpc.workbench('task.get', { taskId: fresh.task.id })
   await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
     requestId: 'owner-presentation', text: submitMarker })
-  await until(async () => concurrentPresentation && (await rpc('session/list', {})).items.some(item =>
-    item.sessionId === parentId && !item.running), 'owner submission presentation committed')
+  const presentations = await until(async () => {
+    const state = await rpc('session/state', { sessionId: parentId })
+    if (state.running || state.queue?.length !== 0) return
+    const page = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 30 })
+    const events = page.records.map(record => record.event).filter(event => event.type === 'deliverables/presented')
+    if (events.length >= ownerPresentationFiles.length) return events
+  }, 'both owner submission presentations committed')
+  assert.deepEqual(presentations.map(event => event.data.files.map(file => basename(file.path))),
+    [['first.md'], ['second.md']])
+  assert.ok(presentations[0].seq < presentations[1].seq)
   const submit = { taskId: fresh.task.id, expectedRevision: ownerStage.task.revision,
-    requestId: 'owner-submit', selection: 'latest-presentation' }
+    requestId: 'owner-submit', selection: 'files', paths: ['first.md'] }
   const [singleSubmission, sameSubmission] = await Promise.all([
     rpc.workbench('task.submit', submit), rpc.workbench('task.submit', submit),
   ])
@@ -670,8 +701,16 @@ try {
   assert.equal(singleSubmission.task.revision, ownerStage.task.revision + 1)
   assert.equal(singleSubmission.submissions.length, 1)
   assert.equal(singleSubmission.artifacts.length, 1)
-  assert.equal((await rpc.workbench('task.submit', { ...submit, selection: 'files', paths: ['first.md'] },
-    { status: 400 })).code, 'INVALID')
+  const [selectedFile] = singleSubmission.artifacts
+  assert.equal(selectedFile.locator, await realpath(join(root, 'first.md')))
+  assert.equal(selectedFile.versionKind, 'sha256')
+  assert.equal(selectedFile.version, hash('draft'))
+  assert.equal(selectedFile.source.kind, 'session-event')
+  assert.deepEqual(JSON.parse(selectedFile.source.locator), [parentId, presentations[0].seq, 0])
+  assert.deepEqual(singleSubmission.submissions[0].artifactIds, [selectedFile.id])
+  const changedSubmit = { ...submit, paths: ['second.md'] }
+  assert.equal((await rpc.workbench('task.submit', changedSubmit, { status: 400 })).code, 'INVALID')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), singleSubmission)
   const approve = { taskId: fresh.task.id, expectedRevision: singleSubmission.task.revision,
     submissionId: singleSubmission.task.currentSubmissionId, verdict: 'accept', reason: null,
     confirmedCriteria: ['facts'] }
@@ -730,21 +769,36 @@ try {
   const archivedSources = archivedMessages.map(item =>
     ({ kind: 'session-event', locator: JSON.stringify([sessionId, item.seq]), observedAt }))
   const unrelatedSource = { ...archivedSources[0], locator: JSON.stringify([randomUUID(), archivedMessages[0].seq]) }
+  const otherTaskSource = { ...archivedSources[0], locator: JSON.stringify([parentId, parentMessage.seq]) }
   const toolSource = { ...archivedSources[0], locator: JSON.stringify([sessionId, samples[0].toolResultSeq]) }
-  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, toolSource)
-  await writeFile(archivedTaskFile, JSON.stringify(archived))
+  const [, presentationSeq] = JSON.parse(submitted.artifacts[0].source.locator)
+  const presentationAsMessage = { ...archivedSources[0], locator: JSON.stringify([sessionId, presentationSeq]) }
+  const nonMessageSources = [toolSource, presentationAsMessage]
+  archived.record.detail.task.materials.push(...archivedSources, unrelatedSource, otherTaskSource, ...nonMessageSources)
+  const archivedBytes = JSON.stringify(archived)
+  await writeFile(archivedTaskFile, archivedBytes)
   rpc = await start({}, { dataHome: archive })
+  assert.equal(fresh.task.workspaceId, archived.record.detail.task.workspaceId)
+  const otherTaskConversation = await rpc.workbench('task.conversation', { taskId: fresh.task.id, limit: 50 })
+  assert.equal(otherTaskConversation.sessionId, parentId)
+  assert.deepEqual(otherTaskConversation.messages.find(item => item.seq === parentMessage.seq), parentMessage)
   const archivedContext = await rpc.workbench('task.context.index', { taskId })
   assert.deepEqual(archivedContext.sources.filter(entry => entry.origins.includes('brief') &&
-    entry.source.kind === 'session-event' && entry.source.locator !== toolSource.locator)
+    entry.source.kind === 'session-event' && !nonMessageSources.some(item => item.locator === entry.source.locator))
     .map(entry => entry.source), archivedSources)
   for (const [index, archivedSource] of archivedSources.entries()) {
     assert.deepEqual((await rpc.workbench('task.context.load', { taskId, source: archivedSource })).content,
       { kind: 'message', role: archivedMessages[index].role, text: archivedMessages[index].text })
   }
   await rpc.workbench('task.context.load', { taskId, source: unrelatedSource }, { status: 404 })
-  await rpc.workbench('task.context.load', { taskId, source: toolSource }, { status: 404 })
+  await rpc.workbench('task.context.load', { taskId, source: otherTaskSource }, { status: 404 })
+  for (const rejected of nonMessageSources) {
+    await rpc.workbench('task.context.load', { taskId, source: rejected }, { status: 404 })
+  }
+  const changedDate = new Date(Date.parse(observedAt) + 1000).toISOString()
+  await rpc.workbench('task.context.load', { taskId, source: { ...archivedSources[0], observedAt: changedDate } }, { status: 404 })
   assert.equal(allModelRequests, beforeRollback)
+  assert.equal(await readFile(archivedTaskFile, 'utf8'), archivedBytes)
   await stop()
 
   await cp(backup, restored, { recursive: true })
@@ -757,6 +811,7 @@ try {
   assert.equal((await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 50 })).sessionId, sessionId)
   assert.equal(allModelRequests, beforeRollback)
   assert.deepEqual(await rpc.workbench('task.submit', submit), singleSubmission)
+  assert.equal((await rpc.workbench('task.submit', changedSubmit, { status: 400 })).code, 'INVALID')
   assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), oneDecision)
   const interrupted = await rpc.workbench('task.create', { ...brief, requestId: 'interrupted-after-reservation' })
   const interruptedReady = await rpc.workbench('task.ready', {
@@ -780,9 +835,13 @@ try {
   assert.deepEqual(await rpc.workbench('task.start', interruptedStart), pending)
   assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
 
-  const reset = await rpc.workbench('task.reconcile', { taskId: pending.task.id, requestId: 'discard',
-    expectedRevision: pending.task.revision, action: 'discard-intent', rootSessionId: null })
+  const discard = { taskId: pending.task.id, requestId: 'discard',
+    expectedRevision: pending.task.revision, action: 'discard-intent', rootSessionId: null }
+  const reset = await rpc.workbench('task.reconcile', discard)
   assert.equal(reset.task.status, 'ready')
+  assert.deepEqual(await rpc.workbench('task.reconcile', discard), reset)
+  assert.equal((await rpc.workbench('task.reconcile', { ...discard, action: 'attach', rootSessionId: pendingNative.sessionId },
+    { status: 400 })).code, 'INVALID')
   const retry = { taskId: reset.task.id, requestId: 'explicit-retry', expectedRevision: reset.task.revision }
   const started = await rpc.workbench('task.start', retry)
   assert.equal(started.task.status, 'active')
@@ -825,6 +884,10 @@ try {
   rpc = await start({}, { dataHome: restored })
   assert.deepEqual(await rpc.workbench('task.start', lateStart), lateBlocked)
   assert.equal((await rpc.workbench('task.reconcile', verifyLate, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  assert.deepEqual(await rpc.workbench('task.reconcile', attach), attached)
+  assert.deepEqual(await rpc.workbench('task.reconcile', discard), reset)
+  assert.equal((await rpc.workbench('task.reconcile', { ...attach, action: 'discard-intent', rootSessionId: null },
+    { status: 400 })).code, 'INVALID')
   const sessionIdsAfterTimeout = (await rpc('session/list', {})).items.map(item => item.sessionId)
   assert.deepEqual(sessionIdsAfterTimeout.sort(), [...priorSessions, unrelated.runs[0].rootSessionId, lateSession].sort())
   assert.equal(allModelRequests, beforeRollback)

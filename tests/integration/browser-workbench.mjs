@@ -22,11 +22,14 @@ const checkedRevision = 'browser checked revision'
 const suggestionPrompt = 'browser execution suggestion'
 const suggestionReason = '先核对输入再决定怎么修改'
 const overrideReason = '沿用已验证的开发流程'
+const recoveryTitle = 'browser recover root session'
 const attempts = new Map()
 let independentReviewRequests = 0
+let modelRequests = 0
 let suggested = false
 
 const provider = createServer(async (request, response) => {
+  modelRequests += 1
   try {
     const parts = []
     for await (const part of request) parts.push(part)
@@ -87,14 +90,20 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 function safeOutput() {
   return log.replace(/dsh web: .+/g, 'dsh web: [private URL]')
 }
-async function start() {
+async function start({ failAttach = false } = {}) {
   log = ''
+  const env = { ...process.env, DSH_HOME: join(home, 'dsh'), DSH_AGENTS_HOME: join(home, 'agents'),
+    DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}` }
+  delete env.WORKBENCH_TEST_FAIL_ATTACH
+  delete env.WORKBENCH_TEST_HOLD_NATIVE_CREATE
+  delete env.WORKBENCH_TEST_LATE_NATIVE_CREATE
+  delete env.WORKBENCH_TEST_REVIEW_RECEIPT_FAULT
+  if (failAttach) env.WORKBENCH_TEST_FAIL_ATTACH = '1'
   child = spawn(process.execPath, [
     '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', overlay,
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
-    cwd: upstream, env: { ...process.env, DSH_HOME: join(home, 'dsh'), DSH_AGENTS_HOME: join(home, 'agents'),
-      DEEPSEEK_API_KEY: 'browser-test', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}` },
+    cwd: upstream, env,
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   closed = once(child, 'close')
@@ -135,6 +144,8 @@ try {
     process.env.WORKBENCH_OVERLAY_GENERATOR ??
       fileURLToPath(new URL('../../scripts/source-overlay.mjs', import.meta.url)), upstream, overlay, usagePolicy, '--evidence-policy', evidencePolicy,
   ])
+  const recoveryFixture = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
+  await writeFile(overlay, `\n- insert:\n    - id: workbench-test-host\n      name: ${JSON.stringify(recoveryFixture)}\n`, { flag: 'a' })
   browser = await chromium.launch({
     ...(process.env.WORKBENCH_CHROME_PATH ? { executablePath: process.env.WORKBENCH_CHROME_PATH } : {}),
   })
@@ -155,7 +166,14 @@ try {
   }
   const button = name => page.getByRole('button', { name, exact: true })
   const currentChoice = page.getByRole('region', { name: '当前执行方式' })
-  await openWorkbench(await start())
+  const conversation = page.getByRole('region', { name: '执行会话' })
+  const composer = page.getByLabel('发给 Agent')
+  const taskState = page.locator('.state')
+  const readyButton = button('启动 Agent 会话')
+  const attachButton = button('核对并挂载')
+  const sessionIdField = page.getByLabel('要核对的会话 ID')
+  const taskButton = title => page.getByRole('navigation', { name: '任务列表' }).getByRole('button', { name: title, exact: false })
+  await openWorkbench(await start({ failAttach: true }))
   async function tabTo(target) {
     await target.waitFor()
     for (let step = 0; step < 50; step++) {
@@ -186,6 +204,14 @@ try {
   const goalStart = '材料检索与核验\n<review>'
   const goalEnd = '</review>'
   const longGoal = goalStart + 'x'.repeat(8192 - goalStart.length - goalEnd.length) + goalEnd
+  const templateDefaults = {
+    development: { deliverables: '修改后的代码\n验证结果', criteria: '实现预期行为\n运行相关测试' },
+    design: { deliverables: '可预览设计\n关键状态说明', criteria: '覆盖主要使用场景\n检查响应式与关键状态' },
+    writing: { deliverables: '可编辑正文', criteria: '符合目标受众与语气\n核查关键事实' },
+    documents: { deliverables: '可编辑材料\n来源清单', criteria: '核对关键事实和数据\n标注来源及缺失信息' },
+  }
+  const deliverableField = page.getByLabel(/交付物.*每行一项/)
+  const criterionField = page.getByLabel(/验收条件.*每行一项/)
   async function choose(domain, labels, reason, skill = '') {
     const taskType = page.getByLabel('任务类型')
     await taskType.waitFor()
@@ -206,14 +232,17 @@ try {
     await currentChoice.getByText(reason, { exact: true }).waitFor()
     await page.locator('body:not([aria-busy])').waitFor()
   }
-  async function create(title, template, { goal = '交付并核查该工作', criteria, materials, afterStart } = {}) {
+  async function createDraft(title, template, { goal, criteria, deliverables, materials } = {}) {
     await activate(newTask)
     await page.getByLabel('模板').selectOption(template)
+    assert.equal(await deliverableField.inputValue(), templateDefaults[template].deliverables)
+    assert.equal(await criterionField.inputValue(), templateDefaults[template].criteria)
     await tabTo(page.getByLabel('标题'))
     await page.keyboard.insertText(title)
     await tabTo(page.getByLabel('目标'))
-    await page.keyboard.insertText(goal)
-    if (criteria) await page.getByLabel(/验收条件/).fill(criteria)
+    await page.keyboard.insertText(goal ?? '交付并核查该工作')
+    if (criteria) await criterionField.fill(criteria)
+    if (deliverables) await deliverableField.fill(deliverables)
     if (materials) await page.getByLabel(/资料来源/).fill(materials)
     const onSave = operation => page.waitForResponse(response =>
       response.url().endsWith('/workbench/v1/command') && response.request().method() === 'POST' &&
@@ -221,6 +250,7 @@ try {
     const created = materials ? onSave('task.create') : null
     await activate(button('保存任务'))
     await page.getByRole('heading', { name: title }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
     if (created) {
       const original = (await (await created).json()).result.task.materials
       await activate(button('编辑任务'))
@@ -233,10 +263,18 @@ try {
       const edited = onSave('task.updateBrief')
       await activate(button('保存任务'))
       assert.deepEqual((await (await edited).json()).result.task.materials, original)
+      await page.locator('body:not([aria-busy])').waitFor()
     }
+  }
+  async function createReady(title, template, fields) {
+    await createDraft(title, template, fields)
     await activate(button('标为就绪'))
-    await activate(button('启动 Agent 会话'))
-    const conversation = page.getByRole('region', { name: '执行会话' })
+    await readyButton.waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+  }
+  async function create(title, template, { goal = '交付并核查该工作', criteria, materials, afterStart } = {}) {
+    await createReady(title, template, { goal, criteria, materials })
+    await activate(readyButton)
     await conversation.waitFor()
     if (afterStart) await afterStart()
     await activate(page.getByRole('link', { name: '查看执行会话' }))
@@ -270,6 +308,90 @@ try {
     }
     await activate(button('接受提交'))
   }
+  async function nativeSessionIds() {
+    const response = await page.request.post(new URL('/api/session/list', page.url()).href, { data: {
+      type: 'client-request', rpcId: randomUUID(), method: 'session/list', payload: { args: { _request: {} } },
+    } })
+    assert.equal(response.status(), 200)
+    const { result } = await response.json()
+    assert.equal(result.ok, true, JSON.stringify(result.error))
+    return result.value.items.map(item => item.sessionId)
+  }
+  async function workbenchCommand(operation, input) {
+    const endpoint = new URL('/workbench/v1/command', page.url())
+    const response = await page.request.post(endpoint.href, {
+      headers: { origin: endpoint.origin }, data: { operation, input },
+    })
+    assert.equal(response.status(), 200, operation)
+    return (await response.json()).result
+  }
+  async function waitTaskState(label) {
+    await taskState.getByText(label, { exact: true }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+  }
+  async function checkCancelled(rootSessionId) {
+    await waitTaskState('已取消')
+    await taskButton(recoveryTitle).getByText('已取消', { exact: true }).waitFor()
+    await conversation.getByText(rootSessionId, { exact: true }).waitFor()
+    assert.equal(await composer.isVisible(), false)
+    for (const label of ['启动 Agent 会话', '暂停任务', '恢复任务', '提交最新展示', '取消任务']) {
+      assert.equal(await button(label).isVisible(), false, label)
+    }
+  }
+
+  const designTitle = 'browser design template'
+  const writingTitle = 'browser writing template'
+  await createDraft(designTitle, 'design', { deliverables: '线框稿\n交互说明' })
+  await createDraft(writingTitle, 'writing', { criteria: '对照编辑规范\n核查引用来源' })
+  await createReady(recoveryTitle, 'development')
+  await activate(readyButton)
+  await page.getByRole('heading', { name: '会话待核对' }).waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  const orphaned = await nativeSessionIds()
+  assert.equal(orphaned.length, 1)
+  assert.equal(await conversation.isVisible(), false)
+  await stop()
+  await openWorkbench(await start())
+  for (const [title, deliverables, criteria] of [
+    [designTitle, '线框稿\n交互说明', templateDefaults.design.criteria],
+    [writingTitle, templateDefaults.writing.deliverables, '对照编辑规范\n核查引用来源'],
+  ]) {
+    await activate(taskButton(title))
+    await page.getByRole('heading', { name: title }).waitFor()
+    await activate(button('编辑任务'))
+    assert.equal(await page.getByLabel('模板').isVisible(), false)
+    assert.equal(await deliverableField.inputValue(), deliverables)
+    assert.equal(await criterionField.inputValue(), criteria)
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  }
+  await activate(taskButton(recoveryTitle))
+  await sessionIdField.fill(randomUUID())
+  await activate(attachButton)
+  await page.getByRole('status').filter({ hasText: 'Native startup requires verification' }).waitFor()
+  assert.equal(await conversation.isVisible(), false)
+  await sessionIdField.fill(orphaned[0])
+  await activate(attachButton)
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  await waitTaskState('执行中')
+  assert.deepEqual(await nativeSessionIds(), orphaned)
+  assert.equal(modelRequests, 0)
+
+  await activate(button('暂停任务'))
+  await waitTaskState('已暂停')
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  assert.equal(await composer.isVisible(), false)
+  await activate(button('恢复任务'))
+  await waitTaskState('执行中')
+  await conversation.getByText(orphaned[0], { exact: true }).waitFor()
+  await composer.waitFor()
+  await activate(button('取消任务'))
+  await checkCancelled(orphaned[0])
+  await activate(button('刷新任务'))
+  await checkCancelled(orphaned[0])
+  assert.deepEqual(await nativeSessionIds(), orphaned)
+  assert.equal(modelRequests, 0)
+
   await create('browser code task', 'development', {
     afterStart: async () => {
       await page.getByLabel('发给 Agent').fill(suggestionPrompt)
@@ -355,6 +477,8 @@ try {
   await writeFile(join(workspace, 'materials.md'), 'Updated version')
   await stop()
   await openWorkbench(await start())
+  await activate(taskButton(recoveryTitle))
+  await checkCancelled(orphaned[0])
   await activate(page.getByRole('button', { name: /browser code task/ }))
   await currentChoice.getByText('代码开发 · 用户选定', { exact: true }).waitFor()
   await currentChoice.getByText(overrideReason, { exact: true }).waitFor()
@@ -383,7 +507,7 @@ try {
   await choose('research', ['先审方向', '先查证'], '退回后先确认方向和资料来源')
   await activate(library.locator('summary'))
   await library.getByText('执行方式：先审方向、先查证', { exact: true }).waitFor()
-  await button('预览 brief.md').click()
+  await activate(button('预览 brief.md'))
   await preview.getByText(briefText, { exact: true }).waitFor()
   await activate(button('填入任务说明'))
   const materialPrompt = page.getByLabel('发给 Agent')
@@ -440,24 +564,210 @@ try {
   await currentEvidence.locator('summary').click()
   await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
   assert.equal(await page.getByRole('checkbox', { name: 'JSON 格式有效' }).count(), 0)
-  const decisionRequest = page.waitForRequest(request => request.url().endsWith('/workbench/v1/command') &&
-    request.method() === 'POST' && request.postDataJSON().operation === 'task.decide')
-  await accept()
-  assert.deepEqual((await decisionRequest).postDataJSON().input.confirmedCriteria, ['criterion-2'])
-  await page.locator('.state').getByText('已验收', { exact: true }).waitFor()
+  const checkedScope = await page.getByLabel('工作区', { exact: true }).inputValue()
+  async function listedCheckedTasks() {
+    const { items, nextCursor } = await workbenchCommand('task.list', { workspaceId: checkedScope, limit: 50, cursor: null })
+    assert.equal(nextCursor, null)
+    return items.filter(task => task.title === checkedTitle).map(task => task.id)
+  }
+  const checkedTasks = await listedCheckedTasks()
+  assert.equal(checkedTasks.length, 1)
+  const taskId = checkedTasks[0]
+  const beforeAcceptance = await workbenchCommand('task.get', { taskId })
+  assert.equal(beforeAcceptance.task.status, 'review')
+  const acceptanceAttempts = []
+  async function loseFirstAcceptanceResponse(route) {
+    const { operation, input } = route.request().postDataJSON() ?? {}
+    if (operation !== 'task.decide' || input.taskId !== taskId || input.verdict !== 'accept') return route.continue()
+    const response = await route.fetch()
+    acceptanceAttempts.push({ input, status: response.status(), body: await response.json() })
+    // Commit through the real Host, then simulate a connection failure before the UI receives the result.
+    if (acceptanceAttempts.length === 1) return route.abort('connectionreset')
+    return route.fulfill({ response })
+  }
+  let acceptedTask
+  await page.route(commandRoute, loseFirstAcceptanceResponse)
+  try {
+    await accept()
+    await page.locator('#feedback[data-error]').waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+    assert.equal(acceptanceAttempts.length, 1)
+    const first = acceptanceAttempts[0]
+    assert.equal(first.status, 200)
+    assert.deepEqual(first.input.confirmedCriteria, ['criterion-2'])
+    assert.equal(first.input.expectedRevision, beforeAcceptance.task.revision)
+    acceptedTask = first.body.result
+    assert.equal(acceptedTask.task.status, 'accepted')
+    assert.equal(acceptedTask.task.revision, beforeAcceptance.task.revision + 1)
+    assert.deepEqual(acceptedTask.submissions, beforeAcceptance.submissions)
+    assert.deepEqual(acceptedTask.decisions.slice(0, -1), beforeAcceptance.decisions)
+    assert.equal(acceptedTask.decisions.at(-1).submissionId, first.input.submissionId)
+    assert.equal(acceptedTask.decisions.at(-1).verdict, 'accept')
+    assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
+    assert.equal(await manual.isChecked(), true)
+
+    await activate(button('接受提交'))
+    await waitTaskState('已验收')
+    assert.equal(acceptanceAttempts.length, 2)
+    assert.deepEqual(acceptanceAttempts[1], first)
+    assert.deepEqual(await listedCheckedTasks(), checkedTasks)
+    assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
+  } finally {
+    await page.unroute(commandRoute, loseFirstAcceptanceResponse)
+  }
   await stop()
-  await openWorkbench(await start())
-  await page.getByRole('button', { name: /browser checked artifact/ }).click()
+  await openWorkbench(await start({ failAttach: true }))
+  await taskButton(checkedTitle).click()
+  await waitTaskState('已验收')
+  assert.deepEqual(await listedCheckedTasks(), checkedTasks)
+  assert.deepEqual(await workbenchCommand('task.get', { taskId }), acceptedTask)
   await currentEvidence.locator('summary').click()
   await page.locator('.submission-evidence').last().locator('summary').click()
   await currentEvidence.getByText('机器检查 · 通过', { exact: true }).waitFor()
   await currentEvidence.getByText('用户确认 · 通过', { exact: true }).waitFor()
   await page.locator('.submission-evidence').last().getByText('机器检查 · 失败', { exact: true }).waitFor()
 
+  const beforeDiscard = await nativeSessionIds()
+  const beforeDiscardRequests = modelRequests
+  await createReady('browser discard start intent', 'writing')
+  await activate(readyButton)
+  await sessionIdField.waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  const withOrphan = await nativeSessionIds()
+  assert.equal(withOrphan.length, beforeDiscard.length + 1)
+  assert.ok(beforeDiscard.every(id => withOrphan.includes(id)))
+  await activate(button('结束启动意图'))
+  await readyButton.waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+  assert.equal(await sessionIdField.isVisible(), false)
+  assert.equal(await conversation.isVisible(), false)
+  assert.deepEqual((await nativeSessionIds()).sort(), withOrphan.sort())
+  await activate(readyButton)
+  await conversation.waitFor()
+  const afterRestart = await nativeSessionIds()
+  const replacements = afterRestart.filter(id => !withOrphan.includes(id))
+  assert.equal(replacements.length, 1)
+  assert.equal(afterRestart.length, withOrphan.length + 1)
+  await conversation.getByText(replacements[0], { exact: true }).waitFor()
+  assert.equal(modelRequests, beforeDiscardRequests)
+
+  const workspaceSelect = page.getByLabel('工作区', { exact: true })
+  const originalScope = await workspaceSelect.inputValue()
+  async function addWorkspace(name, title) {
+    const path = join(home, name)
+    await mkdir(path)
+    await activate(button('添加工作区'))
+    await directory.fill(path)
+    await activate(button('添加'))
+    await page.getByRole('heading', { name: '还没有任务' }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+    await createDraft(title, 'development')
+    return workspaceSelect.inputValue()
+  }
+  const delayedTitle = 'browser delayed workspace task'
+  const latestTitle = 'browser latest workspace task'
+  const delayedScope = await addWorkspace('delayed-workspace', delayedTitle)
+  const latestScope = await addWorkspace('latest-workspace', latestTitle)
+  await workspaceSelect.selectOption(originalScope)
+  await taskButton('browser discard start intent').waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+
+  const workspaceCommand = '**/workbench/v1/command'
+  const { promise: listHeld, resolve: reportListHeld } = Promise.withResolvers()
+  const { promise: releaseList, resolve: finishDelayedList } = Promise.withResolvers()
+  async function holdWorkspaceList(route) {
+    const { operation, input } = route.request().postDataJSON() ?? {}
+    if (operation !== 'task.list' || input.workspaceId !== delayedScope) return route.continue()
+    const response = await route.fetch()
+    reportListHeld()
+    await releaseList
+    return route.fulfill({ response })
+  }
+  await page.route(workspaceCommand, holdWorkspaceList)
+  try {
+    await Promise.all([
+      page.waitForRequest(request => request.method() === 'POST' &&
+        request.url().endsWith('/workbench/v1/command') && request.postDataJSON()?.operation === 'task.list' &&
+        request.postDataJSON().input.workspaceId === delayedScope),
+      workspaceSelect.selectOption(delayedScope),
+    ])
+    await listHeld
+    await workspaceSelect.selectOption(latestScope)
+    assert.equal(await workspaceSelect.inputValue(), latestScope)
+    const displayedOriginalWhileLoading = await taskButton('browser discard start intent').isVisible()
+    finishDelayedList()
+    await page.getByRole('heading', { name: latestTitle, exact: true }).waitFor()
+    await taskButton(latestTitle).waitFor()
+    assert.equal(displayedOriginalWhileLoading, false)
+    assert.equal(await taskButton(delayedTitle).count(), 0)
+    assert.equal(await taskButton('browser discard start intent').count(), 0)
+  } finally {
+    finishDelayedList()
+    await page.unroute(workspaceCommand, holdWorkspaceList)
+  }
+
+  const beforePaginationRequests = modelRequests
+  const titles = Array.from({ length: 53 }, (_, index) => `browser pagination task ${String(index + 1).padStart(2, '0')}`)
+  const paginatedScope = await addWorkspace('pagination-workspace', titles[0])
+  for (const title of titles.slice(1)) {
+    await workbenchCommand('task.create', { requestId: randomUUID(), workspaceId: paginatedScope, title,
+      goal: 'Verify workspace task pagination', materials: [], deliverables: ['page.txt'],
+      criteria: [{ id: 'page', description: 'List this task once' }] })
+  }
+  const ledger = page.getByRole('navigation', { name: '任务列表' })
+  const more = button('加载更多')
+  const displayedTitles = () => ledger.getByRole('button').evaluateAll(rows => rows.map(row => row.firstChild.textContent))
+  async function taskPage(scope, navigate) {
+    const [response] = await Promise.all([
+      page.waitForResponse(response => {
+        const request = response.request()
+        if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v1/command')) return false
+        const { operation, input } = request.postDataJSON()
+        return operation === 'task.list' && input.workspaceId === scope
+      }),
+      navigate(),
+    ])
+    assert.equal(response.status(), 200)
+    await page.locator('body:not([aria-busy])').waitFor()
+    return { input: response.request().postDataJSON().input, result: (await response.json()).result }
+  }
+  const selectWorkspace = scope => taskPage(scope, () => workspaceSelect.selectOption(scope))
+  await selectWorkspace(latestScope)
+  const firstPage = await selectWorkspace(paginatedScope)
+  const firstTitles = firstPage.result.items.map(item => item.title)
+  assert.equal(firstPage.input.cursor, null)
+  assert.equal(firstTitles.length, 50)
+  assert.ok(firstPage.result.nextCursor)
+  assert.deepEqual(await displayedTitles(), firstTitles)
+  await more.waitFor()
+
+  const otherPage = await selectWorkspace(latestScope)
+  assert.equal(otherPage.input.cursor, null)
+  assert.deepEqual(await displayedTitles(), [latestTitle])
+  assert.equal(await more.isVisible(), false)
+  const reopenedPage = await selectWorkspace(paginatedScope)
+  assert.equal(reopenedPage.input.cursor, null)
+  assert.deepEqual(await displayedTitles(), firstTitles)
+  await more.waitFor()
+
+  await button('刷新任务').focus()
+  await page.keyboard.press('Shift+Tab')
+  assert.equal(await more.evaluate(element => element === document.activeElement), true)
+  const lastPage = await taskPage(paginatedScope, () => page.keyboard.press('Enter'))
+  assert.equal(lastPage.input.cursor, reopenedPage.result.nextCursor)
+  assert.equal(lastPage.result.items.length, 3)
+  assert.equal(lastPage.result.nextCursor, null)
+  const allDisplayed = await displayedTitles()
+  assert.deepEqual(allDisplayed, [...firstTitles, ...lastPage.result.items.map(item => item.title)])
+  assert.deepEqual([...allDisplayed].sort(), titles)
+  assert.equal(await more.isVisible(), false)
+  await page.getByRole('heading', { name: firstTitles[0], exact: true }).waitFor()
+  assert.equal(modelRequests, beforePaginationRequests)
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium workspace switching, keyboard pagination, task templates, root-session recovery, discard, pause, resume and cancellation, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, lost acceptance response replay, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
