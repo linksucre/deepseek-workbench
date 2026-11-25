@@ -11,12 +11,20 @@ const root = await mkdtemp(join(tmpdir(), 'workbench-list-performance-'))
 const workspaceId = 'perf-workspace'
 const input = { workspaceId, limit: 50, cursor: null }
 const principal = { kind: 'user', actorId: 'local-owner' }
+const taskCount = 3000
+const timestampGroup = 75
+const taskId = index => `00000000-0000-4000-8000-${index.toString().padStart(12, '0')}`
+
+const expectedIds = []
+for (let start = taskCount - timestampGroup; start >= 0; start -= timestampGroup) {
+  for (let index = start; index < start + timestampGroup; index += 1) expectedIds.push(taskId(index))
+}
 
 try {
   await useStorage(root, async repository => {
-    for (let i = 0; i < 3000; i += 1) {
-      const id = `00000000-0000-4000-8000-${i.toString().padStart(12, '0')}`
-      const now = new Date(Date.UTC(2026, 10, 25) + i * 1000).toISOString()
+    for (let i = taskCount - 1; i >= 0; i -= 1) {
+      const id = taskId(i)
+      const now = new Date(Date.UTC(2026, 10, 25) + Math.floor(i / timestampGroup) * 1000).toISOString()
       const detail = createDraft({
         id, workspaceId, now,
         brief: { title: `调研报告 ${i}`, goal: '核对来源与数字，交付可编辑版本',
@@ -26,11 +34,17 @@ try {
     }
   })
   await useStorage(root, async repository => {
-    assert.equal(repository.listTasks(workspaceId).length, 3000)
+    assert.equal(repository.listTasks(workspaceId).length, taskCount)
     const app = createTaskService({ repository, authorize: () => true })
-    const first = await app.list(principal, input)
-    const second = await app.list(principal, { ...input, cursor: first.nextCursor })
-    assert.equal(new Set([...first.items, ...second.items].map(task => task.id)).size, 100)
+    let cursor = null
+    for (let offset = 0; offset < taskCount; offset += input.limit) {
+      const page = await app.list(principal, { ...input, cursor })
+      assert.deepEqual(page.items.map(task => task.id), expectedIds.slice(offset, offset + input.limit),
+        `Task order on page ${offset / input.limit + 1}`)
+      cursor = page.nextCursor
+      if (offset + input.limit < taskCount) assert.ok(cursor, 'A non-final page needs a cursor')
+      else assert.equal(cursor, null, 'The final page must exhaust the cursor')
+    }
     for (let i = 0; i < 10; i += 1) await app.list(principal, input)
     const times = []
     for (let i = 0; i < 50; i += 1) {
@@ -40,7 +54,8 @@ try {
     }
     times.sort((a, b) => a - b)
     const p95 = times[Math.ceil(times.length * 0.95) - 1]
-    console.log(JSON.stringify({ tasks: 3000, limit: 50, samples: times.length, p95Ms: +p95.toFixed(2),
+    console.log(JSON.stringify({ tasks: taskCount, limit: input.limit, pagesVerified: taskCount / input.limit,
+      timestampGroup, samples: times.length, p95Ms: +p95.toFixed(2),
       machine: cpus()[0]?.model, node: process.version, layer: 'application with reopened native JSON storage' }))
     assert.ok(p95 <= 300, 'Warm application list p95 must meet NFR-004')
   })
