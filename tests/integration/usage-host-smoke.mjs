@@ -22,10 +22,18 @@ const childSamples = new Map([
   ['usage-bound-child', { input_tokens: 11, output_tokens: 4, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
   ['usage-unbound-child', { input_tokens: 13, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
 ])
+const retryPrompt = 'usage-transient-retry'
+const cancelPrompt = 'usage-cancelled-stream'
+const lifecycleSamples = new Map([
+  [retryPrompt, { input_tokens: 5, output_tokens: 2, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }],
+  [cancelPrompt, {}],
+])
 const data = await mkdtemp(join(tmpdir(), 'workbench-usage-'))
 const taskId = 'de39c282-481c-4939-8e50-673bf5da7c76'
 const patch = join(data, 'usage.patch.yml')
 let modelCalls = 0
+let retryCalls = 0
+let cancellationSampleStarted = false
 let child
 let closed
 
@@ -35,9 +43,15 @@ const provider = createServer(async (req, res) => {
     for await (const chunk of req) chunks.push(chunk)
     const input = JSON.parse(Buffer.concat(chunks))
     const finalMessage = JSON.stringify(input.messages.at(-1))
-    const sample = [...samples, ...childSamples].find(([prompt]) => finalMessage.includes(prompt))
+    const sample = [...samples, ...childSamples, ...lifecycleSamples].find(([prompt]) => finalMessage.includes(prompt))
     assert.ok(sample, 'the mock only serves known usage fixtures')
     modelCalls += 1
+    const hasTools = input.tools?.length > 0
+    if (sample[0] === retryPrompt && hasTools && ++retryCalls === 1) {
+      res.writeHead(503, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: { message: 'transient local test fault' } }))
+      return
+    }
     const events = [
       { type: 'message_start', message: { id: sample[0], model: 'mock-model', usage: sample[1] } },
       { type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'ok' } },
@@ -46,6 +60,11 @@ const provider = createServer(async (req, res) => {
       { type: 'message_stop' },
     ]
     res.writeHead(200, { 'content-type': 'text/event-stream' })
+    if (sample[0] === cancelPrompt && hasTools) {
+      res.write(events.slice(0, 2).map(event => `data: ${JSON.stringify(event)}\n\n`).join(''))
+      cancellationSampleStarted = true
+      return
+    }
     res.end(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''))
   } catch {
     res.writeHead(400).end()
@@ -121,6 +140,19 @@ async function measure(rpc, sessionId) {
   return { totals: projection.values.tokenUsage, settlement: settlement.type, usage, route: route.data, taskUsage }
 }
 
+async function readLifecycle(rpc, sessionId) {
+  const projection = await rpc('session/projections', { sessionId })
+  const page = await rpc('session/events', { address: { kind: 'session', sessionId } })
+  const events = page.records.map(record => record.event).filter(Boolean)
+  assert.equal(page.hasMore, false)
+  return {
+    totals: projection.values.tokenUsage,
+    attemptsRetried: events.filter(event => event.type === 'llm/retry-started').length,
+    end: events.findLast(event => event.type === 'turn/end')?.data.reason.kind,
+    taskUsage: summarizeTaskUsage({ taskId, sessions: [{ sessionId, afterSeq: -1, inheritedEventCount: 0, events }] }),
+  }
+}
+
 try {
   const fixture = new URL('./fixtures/usage-reader.mjs', import.meta.url).href
   await writeFile(patch, `- insert:\n    - id: workbench-test-usage\n      name: ${JSON.stringify(fixture)}\n`)
@@ -156,6 +188,29 @@ try {
   assert.equal(explicitZero.taskUsage.buckets[0].cacheRead, 0)
   assert.equal(refused.taskUsage.buckets[0].uncachedInput, refused.totals.uncachedInputTokens)
 
+  const { sessionId: retriedId } = await rpc('session/create', { workspaceId: workspace.workspaceId })
+  await rpc('session/prompt', { sessionId: retriedId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: retryPrompt }] })
+  assert.equal((await rpc('session/wait', { sessionId: retriedId, timeoutMs: 8_000 })).reason, 'idle')
+  const retried = await readLifecycle(rpc, retriedId)
+  assert.equal(retryCalls, 2)
+  assert.equal(retried.attemptsRetried, 1)
+  assert.equal(retried.end, 'completed')
+  assert.equal(retried.totals.uncachedInputTokens, 5)
+  assert.equal(retried.taskUsage.buckets[0].uncachedInput, 5)
+  assert.equal(retried.taskUsage.completeness, 'partial', 'the first attempt has no token report')
+
+  const { sessionId: cancelledId } = await rpc('session/create', { workspaceId: workspace.workspaceId })
+  await rpc('session/prompt', { sessionId: cancelledId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: cancelPrompt }] })
+  const deadline = Date.now() + 8_000
+  while (!cancellationSampleStarted && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50))
+  assert.ok(cancellationSampleStarted, 'the mock started the cancellable stream')
+  await rpc('session/cancel', { sessionId: cancelledId })
+  assert.equal((await rpc('session/wait', { sessionId: cancelledId, timeoutMs: 8_000 })).reason, 'idle')
+  const cancelled = await readLifecycle(rpc, cancelledId)
+  assert.equal(cancelled.end, 'aborted')
+  assert.equal(cancelled.taskUsage.completeness, 'unknown')
+  assert.ok(cancelled.taskUsage.buckets.every(bucket => bucket.uncachedInput === null && bucket.output === null))
+
   await stop()
   assert.ok(modelCalls >= samples.size, 'all fixture prompts reached the mock provider')
   const forks = [...childSamples.keys()].map(prompt => ({ id: `session-${randomUUID()}`, prompt, name: prompt }))
@@ -180,12 +235,15 @@ try {
   await stop()
   const callsBeforeColdReads = modelCalls
   await rm(output)
-  await start(bindings, { modelEnabled: false })
+  rpc = await start(bindings, { modelEnabled: false })
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')).usage, usage)
+  assert.deepEqual(await readLifecycle(rpc, retriedId), retried)
+  assert.deepEqual(await readLifecycle(rpc, cancelledId), cancelled)
   assert.equal(modelCalls, callsBeforeColdReads, 'reading restored usage makes no model calls')
   console.log('PASS: native usage shows totals, history route and available cache fields across restart; input/output omissions are indistinguishable from zero.')
   console.log('PASS: reported usage from a failed provider attempt survives restart and contributes to native totals.')
   console.log('PASS: only the bound native fork contributes its own usage, without inherited tokens or model calls on cold read.')
+  console.log('PASS: retry and cancellation report their available usage and coverage gaps across restart.')
 } finally {
   await stop()
   provider.closeAllConnections()
