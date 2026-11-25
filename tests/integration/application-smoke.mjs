@@ -37,10 +37,10 @@ try {
   const files = await createLocalFiles({ root, authorizePath: () => true })
   await writeFile(join(root, 'brief.md'), 'version 1')
   const delivery = {
-    async resolve({ principal, input }) {
+    async resolve({ record, principal, input }) {
       calls += 1
       const sessionId = principal.sessionId
-      const stage = { afterSeq: 0, beforeSeq: seq + 2 }
+      const stage = { afterSeq: record.stages.at(-1).afterSeq, beforeSeq: seq + 2 }
       return {
         artifacts: await resolvePresentation({
           sessionId, stage, selection: input.selection, files, now, newArtifactId: () => `file-${seq}`,
@@ -73,7 +73,7 @@ try {
     assert.deepEqual(repo.read(current.task.id).pendingIntent, intent)
     const verified = {
       intentId: intent.intentId, sessionId: intent.reservedSessionId,
-      workspaceId: intent.workspaceId, agentPreset: intent.agentPreset,
+      workspaceId: intent.workspaceId, agentPreset: intent.agentPreset, afterSeq: 0,
     }
     await assert.rejects(app.bindConfirmedRun(owner, input('bind'), { ...verified, sessionId: 'foreign' }),
       { code: 'RECONCILIATION_REQUIRED' })
@@ -108,9 +108,11 @@ try {
     assert.equal(current.submissions.length, 2)
     assert.notEqual(current.artifacts[0].version, current.artifacts[1].version)
     assert.deepEqual(current.decisions.map(item => item.verdict), ['return', 'accept'])
-    const choices = repo.read(current.task.id).operations
-      .filter(receipt => receipt.operation === 'task.choose').map(receipt => receipt.result.task.choice.source)
-    assert.deepEqual(choices, ['agent', 'user'])
+    const stage = repo.read(current.task.id).stages[0]
+    assert.equal(stage.stageId, current.runs[0].id)
+    assert.equal(stage.afterSeq, 0)
+    assert.deepEqual(stage.choices.map(item => item.choice.source), ['agent', 'user'])
+    assert.ok(stage.choices[0].revision < stage.choices[1].revision)
   })
   console.log('PASS: application with native storage, intent recovery boundary, authorization, override, replay, drift, return and acceptance.')
 } finally {

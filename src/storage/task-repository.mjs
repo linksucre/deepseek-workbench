@@ -14,10 +14,19 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
     actorId: text, operation: text, requestId: text, digest: text,
   })
   const receipt = operation.extend({ result: detail })
+  const stage = z.strictObject({
+    stageId: text, runId: text, afterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
+    openedAt: text,
+    choices: z.array(z.strictObject({
+      revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+      choice: z.unknown(), observedAt: text,
+    })),
+  })
   const schema = z.strictObject({
     schemaVersion: z.literal(1),
     detail,
     pendingIntent: intent.nullable(),
+    stages: z.array(stage).default([]),
     operations: z.array(receipt).min(1),
   })
   const domain = await storageDomain.open(defineDomain({
@@ -51,6 +60,14 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
         parsed.operations.some(item => item.result.task.id !== key) ||
         (parsed.pendingIntent && parsed.pendingIntent.workspaceId !== parsed.detail.task.workspaceId)) {
       throw new TaskError('INVALID', 'Storage key, task or intent identity mismatch')
+    }
+    for (const stage of parsed.stages) {
+      if (!parsed.detail.runs.some(run => run.id === stage.runId) ||
+          stage.choices.some(item => !validateDetail({
+            ...parsed.detail, task: { ...parsed.detail.task, choice: item.choice },
+          }))) {
+        throw new TaskError('INVALID', 'Stage history does not match its task contract')
+      }
     }
     return parsed
   }
@@ -103,7 +120,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
           if (prior.detail.task.revision !== input.expectedRevision) {
             throw new TaskError('REVISION_CONFLICT', 'Task revision changed')
           }
-          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent }))
+          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages }))
           if (next.detail.task.revision !== input.expectedRevision + 1 ||
               next.detail.task.workspaceId !== prior.detail.task.workspaceId) {
             throw new TaskError('INVALID', 'A commit must advance one revision within the same workspace')
@@ -112,6 +129,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
             schemaVersion: 1,
             detail: structuredClone(next.detail),
             pendingIntent: structuredClone(next.pendingIntent),
+            stages: structuredClone(next.stages ?? prior.stages),
             operations: [...prior.operations, { ...identity, result: structuredClone(next.detail) }],
           })
         })

@@ -77,8 +77,23 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         reject('RECONCILIATION_REQUIRED', 'Startup intent changed or is no longer pending')
       }
       const detail = evolveTask(current.detail, command, { expectedRevision: input.expectedRevision, now })
+      let stages = current.stages
+      if (command.kind === 'bind') {
+        stages = [...stages, {
+          stageId: command.run.id, runId: command.run.id, afterSeq: command.afterSeq, openedAt: now,
+          choices: detail.task.choice === null ? [] : [
+            { revision: detail.task.revision, choice: detail.task.choice, observedAt: now },
+          ],
+        }]
+      }
+      if (command.kind === 'choose' && detail.task.activeRunId !== null) {
+        stages = stages.map(stage => stage.runId !== detail.task.activeRunId ? stage : {
+          ...stage, choices: [...stage.choices,
+            { revision: detail.task.revision, choice: detail.task.choice, observedAt: now }],
+        })
+      }
       return {
-        detail,
+        detail, stages,
         pendingIntent: command.kind === 'block-start' ? command.intent
           : command.kind === 'bind' || command.kind === 'clear-block' ? null : current.pendingIntent,
       }
@@ -137,11 +152,12 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
         const intent = record.pendingIntent
         if (!intent || intent.intentId !== verified.intentId ||
             intent.reservedSessionId !== verified.sessionId || intent.workspaceId !== verified.workspaceId ||
-            intent.agentPreset !== verified.agentPreset) {
+            intent.agentPreset !== verified.agentPreset ||
+            !Number.isSafeInteger(verified.afterSeq) || verified.afterSeq < -1) {
           reject('RECONCILIATION_REQUIRED', 'Verified session does not match the startup intent')
         }
         return {
-          kind: 'bind', intentId: intent.intentId,
+          kind: 'bind', intentId: intent.intentId, afterSeq: verified.afterSeq,
           run: {
             id: intent.runId, intentId: intent.intentId, rootSessionId: verified.sessionId,
             childSessionIds: [], startedAt: now, endedAt: null,

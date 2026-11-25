@@ -75,6 +75,7 @@ async function start(probe = {}) {
     env: {
       ...process.env, DSH_HOME: join(root, 'dsh'), DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
+      WORKBENCH_TEST_CHECKOUT: checkout,
       ...probe,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -86,7 +87,7 @@ async function start(probe = {}) {
   const auth = await fetch(link, { redirect: 'manual' })
   assert.equal(auth.status, 303)
   const cookie = auth.headers.get('set-cookie').split(';', 1)[0]
-  return async (method, request) => {
+  const rpc = async (method, request) => {
     const result = await fetch(`${origin}/api/${method}`, {
       method: 'POST', signal: AbortSignal.timeout(10_000),
       headers: { 'content-type': 'application/json', cookie },
@@ -98,6 +99,22 @@ async function start(probe = {}) {
     assert.equal(envelope.ok, true, JSON.stringify(envelope.error))
     return envelope.value
   }
+  rpc.workbench = async (operation, input, options = {}) => {
+    const headers = { 'content-type': 'application/json', origin: options.origin ?? origin }
+    if (!options.anonymous) headers.cookie = cookie
+    const response = await fetch(`${origin}/workbench/v1/command`, {
+      method: 'POST', signal: AbortSignal.timeout(10_000), headers,
+      body: JSON.stringify({ operation, input }),
+    })
+    assert.equal(response.status, options.status ?? 200, `status for ${operation}`)
+    if (!response.headers.get('content-type')?.startsWith('application/json')) {
+      assert.ok(!response.ok, 'Successful commands must return JSON')
+      return
+    }
+    const payload = await response.json()
+    return payload.result ?? payload.error
+  }
+  return rpc
 }
 
 async function stop() {
@@ -111,11 +128,25 @@ const hash = text => createHash('sha256').update(text).digest('hex')
 try {
   const preset = await readFile(new URL('../../src/preset/cordis.patch.yml', import.meta.url), 'utf8')
   const module = new URL('./fixtures/delivery-probe.mjs', import.meta.url).href
-  await writeFile(patch, `${preset}\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n`)
+  const entry = new URL('./fixtures/workbench-host.mjs', import.meta.url).href
+  await writeFile(patch, `${preset}\n- insert:\n    - id: workbench-delivery-probe\n      name: ${JSON.stringify(module)}\n    - id: workbench-test-host\n      name: ${JSON.stringify(entry)}\n`)
   await writeFile(join(root, 'first.md'), 'draft')
   await writeFile(join(root, 'second.md'), 'version 1')
   const rpc = await start()
   const { workspace } = await rpc('workspace/create', { path: root })
+  const brief = {
+    requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
+    goal: 'Verify task persistence', criteria: [{ id: 'facts', description: 'Check sources' }],
+    deliverables: ['second.md'], materials: [],
+  }
+  await rpc.workbench('task.create', brief, { anonymous: true, status: 401 })
+  await rpc.workbench('task.create', brief, { origin: 'https://untrusted.example', status: 403 })
+  assert.equal((await rpc.workbench('task.create', { ...brief, caller: 'owner' }, { status: 400 })).code, 'INVALID')
+  const draft = await rpc.workbench('task.create', brief)
+  const ready = await rpc.workbench('task.ready', {
+    taskId: draft.task.id, requestId: 'workbench-ready', expectedRevision: draft.task.revision,
+  })
+  assert.equal(ready.task.status, 'ready')
   const { sessionId } = await rpc('session/create', { workspaceId: workspace.workspaceId, agentPreset: 'task-collaborator' })
   await rpc('session/prompt', {
     sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text: marker }],
@@ -128,12 +159,14 @@ try {
   for (const [index, value] of ['version 1', 'version 2'].entries()) {
     const resultPath = join(root, `probe-${index}.json`)
     await writeFile(join(root, 'second.md'), value)
-    await start({
+    const restarted = await start({
       WORKBENCH_DELIVERY_WORKSPACE: workspace.workspaceId,
       WORKBENCH_DELIVERY_SESSION: sessionId,
       WORKBENCH_DELIVERY_RESULT: resultPath,
       ...(index > 0 && { WORKBENCH_DELIVERY_PREVIOUS: join(root, `probe-${index - 1}.json`) }),
     })
+    assert.deepEqual(await restarted.workbench('task.get', { taskId: draft.task.id }), ready)
+    assert.deepEqual(await restarted.workbench('task.create', brief), draft)
     const sample = await until(async () => {
       try { return JSON.parse(await readFile(resultPath, 'utf8')) }
       catch (error) { if (error.code !== 'ENOENT') throw error }
