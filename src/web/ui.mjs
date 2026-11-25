@@ -10,6 +10,7 @@ let cursor = null
 let selected = null
 let editing = null
 let busy = false
+let workspaceLoadPending = false
 let selectionVersion = 0
 
 const statusLabel = {
@@ -82,32 +83,37 @@ async function perform(action, errorSink = message => feedback(message, true)) {
   try {
     await action()
   } catch (error) {
+    if (workspaceLoadPending) return
     errorSink(error.message)
     if (error.code === 'REVISION_CONFLICT' && selected) {
       try { await loadTask(selected.task.id) } catch { /* preserve the original error */ }
     }
   } finally {
     busy = false
-    document.body.removeAttribute('aria-busy')
+    if (workspaceLoadPending) void perform(loadWorkspaceTasks)
+    else document.body.removeAttribute('aria-busy')
   }
 }
 
 async function loadWorkspaces(preferred) {
   const spaces = await request('/workbench/v1/workspaces')
+  const scope = workspaceLoadPending ? workspace.value : preferred
   workspace.replaceChildren(...spaces.map(space => {
     const option = node('option', space.title)
     option.value = space.id
     option.title = space.path
     return option
   }))
-  if (spaces.some(space => space.id === preferred)) workspace.value = preferred
+  if (spaces.some(space => space.id === scope)) workspace.value = scope
   $('new').disabled = spaces.length === 0
+  clearTaskView()
   if (spaces.length === 0) {
+    workspaceLoadPending = false
     detail.replaceChildren(mainTitle('添加工作区'), node('p', '选择一个本机目录，任务和代理会话会归到该工作区。'),
       button('添加工作区', () => workdirDialog.showModal(), 'primary'))
     return
   }
-  await loadList()
+  await loadWorkspaceTasks()
 }
 
 function renderList() {
@@ -121,10 +127,33 @@ function renderList() {
   $('more').hidden = !cursor
 }
 
+function clearTaskView() {
+  tasks.clear()
+  selected = null
+  cursor = null
+  renderList()
+  detail.replaceChildren(mainTitle('正在读取任务'))
+  feedback('')
+}
+
+async function loadWorkspaceTasks() {
+  workspaceLoadPending = false
+  try {
+    await loadList()
+  } catch (error) {
+    if (workspaceLoadPending) return
+    detail.replaceChildren(mainTitle('无法读取任务列表'), button('重试', () => {
+      clearTaskView()
+      void perform(loadWorkspaceTasks)
+    }))
+    throw error
+  }
+}
+
 async function loadList({ selectFirst = true, append = false } = {}) {
   const scope = workspace.value
   const page = await command('task.list', { workspaceId: scope, limit: 50, cursor: append ? cursor : null })
-  if (scope !== workspace.value) return
+  if (workspaceLoadPending || scope !== workspace.value) return
   if (!append) tasks.clear()
   for (const task of page.items) tasks.set(task.id, task)
   cursor = page.nextCursor
@@ -141,7 +170,7 @@ async function loadList({ selectFirst = true, append = false } = {}) {
 async function loadTask(id) {
   const version = ++selectionVersion
   const value = await command('task.get', { taskId: id })
-  if (version !== selectionVersion || value.task.workspaceId !== workspace.value) return
+  if (workspaceLoadPending || version !== selectionVersion || value.task.workspaceId !== workspace.value) return
   selected = value
   renderDetail()
   renderList()
@@ -168,7 +197,9 @@ function list(values) {
 function taskAction(operation, payload = {}) {
   return perform(async () => {
     const task = selected.task
-    selected = await mutate(operation, { taskId: task.id, expectedRevision: task.revision, ...payload })
+    const updated = await mutate(operation, { taskId: task.id, expectedRevision: task.revision, ...payload })
+    if (workspaceLoadPending) return
+    selected = updated
     feedback('已更新任务')
     renderDetail()
     await loadList({ selectFirst: false })
@@ -445,6 +476,7 @@ function reviewPanel(task) {
   const area = section('独立审阅', history)
   const change = (operation, payload, success) => perform(async () => {
     await mutate(operation, { taskId: task.id, expectedRevision: task.revision, ...payload })
+    if (!area.isConnected) return
     feedback(success)
     if (selected?.task.id === task.id) await loadTask(task.id)
   })
@@ -570,6 +602,7 @@ function conversationPanel(task, metadata) {
       event.preventDefault()
       void perform(async () => {
         await mutate('task.prompt', { taskId: task.id, expectedRevision: task.revision, text: text.value.trim() })
+        if (!area.isConnected) return
         text.value = ''
         feedback('已发给 Agent')
         await refresh(8)
@@ -788,13 +821,15 @@ taskForm.addEventListener('submit', event => {
     return
   }
   void perform(async () => {
-    selected = editing
+    const updated = editing
       ? await mutate('task.updateBrief', { taskId: editing.id, expectedRevision: editing.revision, ...fields })
       : await mutate('task.create', { workspaceId: workspace.value, ...fields })
     taskDialog.close()
+    if (workspaceLoadPending) return
+    selected = updated
     renderDetail()
     await loadList({ selectFirst: false })
-    feedback('已保存任务')
+    if (!workspaceLoadPending) feedback('已保存任务')
   }, showError)
 })
 
@@ -818,5 +853,9 @@ $('template').addEventListener('change', fillTemplate)
 $('register').addEventListener('click', () => workdirDialog.showModal())
 $('new').addEventListener('click', () => openTaskForm())
 $('more').addEventListener('click', () => perform(() => loadList({ selectFirst: false, append: true })))
-workspace.addEventListener('change', () => perform(() => loadList()))
+workspace.addEventListener('change', () => {
+  workspaceLoadPending = true
+  clearTaskView()
+  void perform(loadWorkspaceTasks)
+})
 void perform(() => loadWorkspaces())

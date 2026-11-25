@@ -537,10 +537,65 @@ try {
   await conversation.getByText(replacements[0], { exact: true }).waitFor()
   assert.equal(modelRequests, beforeDiscardRequests)
 
+  const workspaceSelect = page.getByLabel('工作区', { exact: true })
+  const originalScope = await workspaceSelect.inputValue()
+  async function addWorkspace(name, title) {
+    const path = join(home, name)
+    await mkdir(path)
+    await activate(button('添加工作区'))
+    await directory.fill(path)
+    await activate(button('添加'))
+    await page.getByRole('heading', { name: '还没有任务' }).waitFor()
+    await page.locator('body:not([aria-busy])').waitFor()
+    await createDraft(title, 'development')
+    return workspaceSelect.inputValue()
+  }
+  const delayedTitle = 'browser delayed workspace task'
+  const latestTitle = 'browser latest workspace task'
+  const delayedScope = await addWorkspace('delayed-workspace', delayedTitle)
+  const latestScope = await addWorkspace('latest-workspace', latestTitle)
+  await workspaceSelect.selectOption(originalScope)
+  await taskButton('browser discard start intent').waitFor()
+  await page.locator('body:not([aria-busy])').waitFor()
+
+  const workspaceCommand = '**/workbench/v1/command'
+  const { promise: listHeld, resolve: reportListHeld } = Promise.withResolvers()
+  const { promise: releaseList, resolve: finishDelayedList } = Promise.withResolvers()
+  async function holdWorkspaceList(route) {
+    const { operation, input } = route.request().postDataJSON() ?? {}
+    if (operation !== 'task.list' || input.workspaceId !== delayedScope) return route.continue()
+    const response = await route.fetch()
+    reportListHeld()
+    await releaseList
+    return route.fulfill({ response })
+  }
+  await page.route(workspaceCommand, holdWorkspaceList)
+  try {
+    await Promise.all([
+      page.waitForRequest(request => request.method() === 'POST' &&
+        request.url().endsWith('/workbench/v1/command') && request.postDataJSON()?.operation === 'task.list' &&
+        request.postDataJSON().input.workspaceId === delayedScope),
+      workspaceSelect.selectOption(delayedScope),
+    ])
+    await listHeld
+    await workspaceSelect.selectOption(latestScope)
+    assert.equal(await workspaceSelect.inputValue(), latestScope)
+    const displayedOriginalWhileLoading = await taskButton('browser discard start intent').isVisible()
+    finishDelayedList()
+    await page.getByRole('heading', { name: latestTitle, exact: true }).waitFor()
+    await taskButton(latestTitle).waitFor()
+    assert.equal(displayedOriginalWhileLoading, false)
+    assert.equal(await taskButton(delayedTitle).count(), 0)
+    assert.equal(await taskButton('browser discard start intent').count(), 0)
+  } finally {
+    finishDelayedList()
+    await page.unroute(workspaceCommand, holdWorkspaceList)
+  }
+
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), 390)
   assert.deepEqual(errors, [])
-  console.log('PASS: Chromium task templates, root-session recovery and discard, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
+  console.log('PASS: Chromium workspace switching, task templates, root-session recovery and discard, development, materials and independent review flows, keyboard, session jump, long text, execution choices, drift, context preview and stage handoff, machine evidence, and mobile layout.')
 } finally {
   await browser?.close()
   await stop()
