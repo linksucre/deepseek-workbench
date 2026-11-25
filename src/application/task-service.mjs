@@ -214,6 +214,12 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
       }, { payload: { input, verified } })
     },
 
+    finishLifecycle(principal, input, kind) {
+      return mutate(principal, `task.${kind}`, input, () => ({
+        kind, stopConfirmed: true, resumeConfirmed: true,
+      }))
+    },
+
     submit(principal, input) {
       return mutate(principal, 'task.submit', input, async (record, now) => {
         if (record.detail.task.status !== 'active') reject('INVALID_TRANSITION', 'An active task is required')

@@ -202,10 +202,17 @@ try {
   assert.deepEqual((await rpc('workspace/create', { path: root })).workspace.sessionIds, [sessionId])
   const idle = async () => (await rpc('session/list', {})).items.some(item =>
     item.sessionId === sessionId && !item.running && !item.blank)
-  const prompt = text => rpc('session/prompt', {
-    sessionId, requestId: randomUUID(), mode: 'queue', content: [{ type: 'text', text }],
+  const lifecycleInput = { taskId: draft.task.id, requestId: 'pause', expectedRevision: attached.task.revision }
+  const paused = await rpc.workbench('task.pause', lifecycleInput)
+  assert.equal(paused.task.status, 'paused')
+  assert.deepEqual(await rpc.workbench('task.pause', lifecycleInput), paused)
+  const resumed = await rpc.workbench('task.resume', { ...lifecycleInput, requestId: 'resume', expectedRevision: paused.task.revision })
+  assert.equal(resumed.task.status, 'active')
+  assert.equal(resumed.runs[0].rootSessionId, sessionId)
+  const prompt = (text, revision, requestId = randomUUID()) => rpc.workbench('task.prompt', {
+    taskId: draft.task.id, expectedRevision: revision, requestId, text,
   })
-  await prompt(suggestionMarker)
+  await prompt(suggestionMarker, resumed.task.revision)
   await until(async () => suggestionSteps >= 1 && await idle(), 'native suggestion tool')
   const suggested = await rpc.workbench('task.get', { taskId: draft.task.id })
   assert.equal(suggested.task.choice?.source, 'agent', JSON.stringify(suggestionResults))
@@ -214,8 +221,12 @@ try {
     choice: { domain: 'documents', methods: ['verify-first'], reason: 'Check sources first', skillIds: [], source: 'user' },
   })
   assert.equal(overridden.task.choice.source, 'user')
-  await prompt(marker)
+  await prompt(marker, overridden.task.revision, 'stable-display-request')
   await until(async () => modelSteps >= 3 && await idle(), 'native presentations and workbench submission')
+  const conversation = await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 20 })
+  assert.equal(conversation.sessionId, sessionId)
+  assert.ok(conversation.messages.some(item => item.role === 'user' && item.text === marker))
+  assert.ok(conversation.messages.some(item => item.role === 'assistant' && item.text === 'done'))
   const submitted = await rpc.workbench('task.get', { taskId: draft.task.id })
   assert.equal(submitted.task.status, 'review')
   assert.equal(submitted.submissions.length, 1)
@@ -246,6 +257,12 @@ try {
   assert.equal(samples[0].latest[0].source.locator, samples[1].latest[0].source.locator)
   assert.notEqual(samples[0].latest[0].version, samples[1].latest[0].version)
   rpc = await start()
+  const callsBeforeReplay = modelSteps
+  assert.ok((await prompt(marker, overridden.task.revision, 'stable-display-request')).accepted)
+  assert.equal((await rpc.workbench('task.prompt', {
+    taskId: draft.task.id, expectedRevision: overridden.task.revision, requestId: 'stable-display-request', text: 'changed',
+  }, { status: 400 })).code, 'INVALID')
+  assert.equal(modelSteps, callsBeforeReplay)
   const decision = { taskId: draft.task.id, expectedRevision: submitted.task.revision,
     submissionId: submitted.task.currentSubmissionId, reason: null, verdict: 'accept', confirmedCriteria: ['facts'] }
   assert.equal((await rpc.workbench('task.decide', { ...decision, requestId: 'drift' }, { status: 409 })).code, 'ARTIFACT_DRIFT')
@@ -254,7 +271,7 @@ try {
     verdict: 'return', reason: 'Review the updated file', requestId: 'return',
   })
   assert.equal(returned.task.status, 'active')
-  await prompt('Present the updated file and submit it')
+  await prompt('Present the updated file and submit it', returned.task.revision)
   await until(async () => modelSteps >= 6 && await idle(), 'native re-presentation and re-submission')
   const resubmitted = await rpc.workbench('task.get', { taskId: draft.task.id })
   assert.equal(resubmitted.task.status, 'review')

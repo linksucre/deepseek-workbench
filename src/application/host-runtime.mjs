@@ -3,6 +3,7 @@ import { TaskError } from '../domain/task.mjs'
 import { openTaskRepository } from '../storage/task-repository.mjs'
 import { createHostReview } from './host-review.mjs'
 import { mountWorkbenchTools } from './host-tools.mjs'
+import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
 
@@ -77,6 +78,10 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     app, repository, sessionController: ctx.sessionController,
     sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
   })
+  const conversation = createHostConversation({
+    app, repository, sessionController: ctx.sessionController,
+    sessionQuery: ctx.sessionQuery, workspaceRegistry: ctx.workspaceRegistry,
+  })
   const methods = {
     'task.create': input => app.create(owner, input),
     'task.get': input => app.get(owner, input.taskId),
@@ -86,6 +91,11 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     'task.choose': input => app.choose(owner, input),
     'task.start': input => lifecycle.start(owner, input),
     'task.reconcile': input => lifecycle.reconcile(owner, input),
+    'task.conversation': input => conversation.read(owner, input),
+    'task.prompt': input => conversation.prompt(owner, input),
+    'task.pause': input => conversation.transition(owner, input, 'pause'),
+    'task.resume': input => conversation.transition(owner, input, 'resume'),
+    'task.cancel': input => conversation.transition(owner, input, 'cancel'),
     'task.submit': ({ selection, paths, ...input }) =>
       app.submit(owner, { ...input, selection: { selection, ...(paths && { paths }) } }),
     'task.decide': input => app.decide(owner, input),

@@ -187,7 +187,14 @@ function renderDetail() {
   if (['draft', 'ready'].includes(task.status)) actions.append(button('编辑任务', () => openTaskForm(task)))
   if (task.status === 'draft') actions.append(button('标为就绪', () => taskAction('task.ready'), 'primary'))
   if (task.status === 'ready') actions.append(button('启动 Agent 会话', () => taskAction('task.start'), 'primary'))
-  if (task.status === 'active') actions.append(button('提交最新展示', () => taskAction('task.submit', { selection: 'latest-presentation' })))
+  if (task.status === 'active') {
+    actions.append(button('提交最新展示', () => taskAction('task.submit', { selection: 'latest-presentation' })),
+      button('暂停任务', () => taskAction('task.pause')))
+  }
+  if (task.status === 'paused') actions.append(button('恢复任务', () => taskAction('task.resume'), 'primary'))
+  if (['draft', 'ready', 'active', 'paused', 'review'].includes(task.status)) {
+    actions.append(button('取消任务', () => taskAction('task.cancel')))
+  }
   detail.replaceChildren(head, node('p', task.goal, 'goal'), actions, section('任务要求', brief))
   if (task.choice) {
     detail.append(section('执行方式', node('p', task.choice.methods.map(key => methods[key] ?? key).join('、')),
@@ -204,7 +211,9 @@ function renderDetail() {
       await navigator.clipboard.writeText(run.rootSessionId)
       feedback('已复制会话 ID')
     }))
-    detail.append(section('执行会话', node('code', run.rootSessionId), copy, document.createTextNode(' '), link))
+    const metadata = node('div', undefined, 'actions')
+    metadata.append(node('code', run.rootSessionId), copy, link)
+    detail.append(conversationPanel(task, metadata))
   }
   if (task.status === 'blocked') detail.append(recoveryEditor())
   for (const submission of [...submissions].reverse()) {
@@ -222,6 +231,74 @@ function renderDetail() {
     if (current && task.status === 'review') area.append(reviewEditor(submission))
     detail.append(area)
   }
+}
+
+function conversationPanel(task, metadata) {
+  const history = node('div', undefined, 'conversation-history')
+  history.setAttribute('aria-live', 'polite')
+  const state = node('p', '正在读取会话', 'subtle')
+  const area = section('执行会话', metadata, state, history)
+  let seq = 0
+  let polling
+  async function refresh(tries = 0) {
+    if (!area.isConnected) return
+    clearTimeout(polling)
+    const latest = ++seq
+    try {
+      const view = await command('task.conversation', { taskId: task.id, limit: 30 })
+      if (latest !== seq || !area.isConnected) return
+      state.textContent = view.pendingInput.length ? 'Agent 在 Harness 中等待你的输入'
+        : view.running ? 'Agent 正在执行' : '会话空闲'
+      const messages = view.messages.map(message => {
+        const item = node('article', undefined, 'message')
+        item.append(node('strong', message.role === 'user' ? '你' : 'Agent'), node('p', message.text))
+        return item
+      })
+      history.replaceChildren(...(messages.length ? messages : [node('p', '还没有对话', 'subtle')]))
+      if ((view.running || tries > 0) && !view.pendingInput.length) {
+        polling = setTimeout(() => { void refresh(Math.max(tries - 1, 0)) }, 1800)
+      }
+    } catch (error) {
+      if (latest === seq && area.isConnected) state.textContent = error.message
+    }
+  }
+  area.append(button('刷新对话', () => refresh()))
+  if (task.status === 'active') {
+    const form = node('form', undefined, 'prompt-form')
+    const field = node('label', '发给 Agent', 'field')
+    const text = node('textarea')
+    text.name = 'message'
+    text.rows = 3
+    text.maxLength = 60000
+    text.required = true
+    field.append(text)
+    const actions = node('div', undefined, 'actions')
+    actions.append(button('填入任务说明', () => {
+      text.value = [
+        task.title, task.goal, `交付物：${task.deliverables.join('；')}`,
+        `验收条件：${task.criteria.map(criterion => criterion.description).join('；')}`,
+        ...(task.materials.length ? [`材料：${task.materials.map(item => item.locator).join('；')}`] : []),
+        '请先选择做法，交付时使用 present 和 workbench_submit。',
+      ].join('\n')
+      text.focus()
+    }))
+    const send = node('button', '发送', 'primary')
+    send.type = 'submit'
+    actions.append(send)
+    form.append(field, actions)
+    form.addEventListener('submit', event => {
+      event.preventDefault()
+      void perform(async () => {
+        await mutate('task.prompt', { taskId: task.id, expectedRevision: task.revision, text: text.value.trim() })
+        text.value = ''
+        feedback('已发给 Agent')
+        await refresh(8)
+      })
+    })
+    area.append(form)
+  }
+  queueMicrotask(() => { void refresh() })
+  return area
 }
 
 function choiceEditor(task) {

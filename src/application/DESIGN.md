@@ -23,3 +23,5 @@ reserveStart 只持久化意图，将任务置为待核对。原生创建由会�
 [host-review.mjs](host-review.mjs) 从阶段和上一提交的游标确定原生展示范围，在经过 Host 鉴权的入口核验同一工作区的文件。当前可由 owner 显式确认条件；自动测试结果到验收条件的映射仍待接入。验收前再次读取旧提交所指版本。
 
 [entry.mjs](entry.mjs) 由源码 overlay 挂载原生存储、验证器、认证任务接口和 UI。[source-overlay.mjs](../../scripts/source-overlay.mjs) 验证固定上游提交与构建模块存在后，生成只引用本机受控源码的配置。task.list 只读当前工作区；游标绑定该工作区的排序边界，按更新时间和任务 ID 分页。
+
+[host-conversation.mjs](host-conversation.mjs) 使用任务绑定确认后的原生会话。只读对话筛选显式用户文本与已组装的 Agent 文本。恢复直接验证原会话，无模型请求；暂停和取消调用 DEV-004 的被动停止验证，并在任务持久化前核对 revision。重复发送以原生输入记录检查原文并返回既有回执。

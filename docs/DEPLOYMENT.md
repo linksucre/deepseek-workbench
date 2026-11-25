@@ -18,10 +18,18 @@ DSH_HOME="$HOME/Library/Application Support/DeepSeek Harness Workbench" \
   --host 127.0.0.1 --port 3081
 ```
 
-使用 Harness 打印的本地链接登录，然后访问同一地址的 `/workbench`。工作台可注册工作区、建任务、启动会话并验收提交。对已有会话，可用页面里的会话 ID 在 Harness 中定位。只需要预设时，可以改用 `src/preset/cordis.patch.yml`。真实模型由部署者按 Harness 的方式在独立数据目录提供凭据。启动日志包含临时登录链接，保存在本机受限文件中。备份业务数据时仅导出授权记录。
+使用 Harness 打印的本地链接登录，然后访问同一地址的 `/workbench`。工作台可注册工作区、建任务、启动会话并验收提交。工作台可直接打开绑定会话的对话视图及发送消息。需要 Harness 原生审批等交互时，可用页面里的会话 ID 在 Harness 中定位。只需要预设时，可以改用 `src/preset/cordis.patch.yml`。真实模型由部署者按 Harness 的方式在独立数据目录提供凭据。启动日志包含临时登录链接，保存在本机受限文件中。备份业务数据时仅导出授权记录。
 
 回滚前停止当前服务，备份 Harness 独立数据目录。使用去掉补丁的同版本 Web profile 验证标准预设；需要继续打开使用任务协作预设的现有会话时，使用原版本补丁重启。M1 开始引入任务存储后，按 [数据库文档](../DATABASE.md) 验证备份恢复再启用旧版本。
 
 远端发布先跑测试与安装复核。当前私有 manifest 供本地开发，发布形态需通过上游安装能力工单确认。
 
-本地入口以已构建源码为安装载体。当前版本以源码 overlay 部署，发布清单仍保留原有的预设 bundle；发布合成包及生命周期测试另行验证。
+本地入口以已构建源码为安装载体。当前版本通过源码 overlay 部署完整 Host，预设 bundle 继续作为单独入口。已用本地归档安装和浏览器双链路验证源代码资产与运行依赖。
+
+可以用 `npm pack` 构建本地归档，安装到独立目录，再执行已安装的生成器。归档安装依然需要同版本、已构建的上游 checkout。
+
+```sh
+npm pack --pack-destination /path/to/artifacts
+npm install --prefix /path/to/local-install /path/to/artifacts/deepseek-workbench-0.1.0.tgz
+node /path/to/local-install/node_modules/deepseek-workbench/scripts/source-overlay.mjs   /path/to/built/deepseek-harness /path/to/new-workbench-overlay.yml
+```

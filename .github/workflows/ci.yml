@@ -54,3 +54,13 @@ jobs:
       - run: node tests/integration/storage-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/application-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Install pinned browser
+        working-directory: upstream/apps/web
+        run: corepack pnpm exec playwright install chromium
+      - name: Verify browser workflows from installed archive
+        run: |
+          package_dir="$(mktemp -d)"
+          archive="$(npm pack --pack-destination "$package_dir" --silent)"
+          npm install --prefix "$package_dir/install" --no-audit --no-fund "$package_dir/$archive"
+          export WORKBENCH_OVERLAY_GENERATOR="$package_dir/install/node_modules/deepseek-workbench/scripts/source-overlay.mjs"
+          node tests/integration/browser-workbench.mjs "$GITHUB_WORKSPACE/upstream"

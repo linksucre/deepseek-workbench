@@ -74,3 +74,9 @@ textarea { resize: vertical }
   .split { display: block; }
   .split > div + div { margin-top: 1rem; }
 }
+.conversation-history { display: grid; gap: .65rem; margin: .75rem 0; }
+.message { border-left: 3px solid var(--line); padding: .4rem .8rem; }
+.message strong { color: var(--primary); font-size: .82rem; }
+.message p { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0 0; }
+.prompt-form { display: grid; gap: .55rem; margin-top: 1rem; }
+.prompt-form textarea { width: 100%; min-width: 0; padding: .5rem; }

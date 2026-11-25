@@ -8,6 +8,8 @@
 
 [host-page.mjs](host-page.mjs) 在真实 Web Host 上提供 owner 受保护的同源页面和静态资源，使用严格 CSP。页面采用任务账簿与详情双栏，小屏转单栏。无外部静态依赖；工作区从宿主读取或调用原生 API 录入。任务列表按工作区分页，首屏最多 50 项，标题、交付路径和理由均以文本节点渲染。
 
-[ui.mjs](ui.mjs) 实现四类任务模板、建改任务、就绪、启动、待核对、选择执行方式、提交、已提交版本及逐项验收。失败后的相同输入复用请求 ID，revision 冲突时刷新详情。会话区提供根会话 ID 与原生 Harness 入口，目前未做由工作台直达指定会话的导航。
+[ui.mjs](ui.mjs) 实现四类任务模板、建改任务、就绪、启动、待核对、选择执行方式、提交、已提交版本及逐项验收。失败后的相同输入复用请求 ID，revision 冲突时刷新详情。会话区直达已绑定根会话的只读对话视图，并可发消息、暂停及恢复。Harness 原生交互，如工具审批或文件预览，使用原生入口及显示的会话 ID。
 
 `tests/integration/host-delivery-smoke.mjs` 使用真实部署 overlay 和 Host 验证页面权限、资源、分页和既有 M1 链路。Chromium 中验证添加工作区、创建任务、置就绪、启动会话和小屏响应式。使用 `tests/integration/list-performance.mjs` 验证重开原生 JSON 后端之后，3000 条任务的应用分页性能。
+
+[浏览器集成测试](../../tests/integration/browser-workbench.mjs) 通过实际 Web Host、原生工具和模拟模型覆盖代码与材料两条完整交付路径，包括小屏布局。CI 从安装后的本地归档生成 overlay 并运行同一测试。
