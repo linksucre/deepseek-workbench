@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -13,6 +13,7 @@ const baseline = JSON.parse(await readFile(new URL('../../harness-baseline.json'
 assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: checkout, encoding: 'utf8' }).trim(), baseline.commit)
 const root = await mkdtemp(join(tmpdir(), 'dsh-host-delivery-'))
 const patch = join(root, 'test.patch.yml')
+const data = join(root, 'dsh')
 const usagePolicy = join(root, 'usage-policy.json')
 const marker = 'Workbench native presentation probe'
 const markerRequest = body => body.tools?.some(tool => tool.name === 'present')
@@ -95,15 +96,15 @@ async function until(read, description, timeout = 25_000) {
   throw new Error(`Unable to verify ${description}\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
 }
 
-async function start(probe = {}) {
+async function start(probe = {}, { workbench = true, dataHome = data } = {}) {
   output = ''
   child = spawn(process.execPath, [
-    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', '--patch', patch,
+    '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', ...(workbench ? ['--patch', patch] : []),
     '--no-open', '--host', '127.0.0.1', '--port', '0',
   ], {
     cwd: checkout,
     env: {
-      ...process.env, DSH_HOME: join(root, 'dsh'), DSH_AGENTS_HOME: join(root, 'agents'),
+      ...process.env, DSH_HOME: dataHome, DSH_AGENTS_HOME: join(root, 'agents'),
       DEEPSEEK_API_KEY: 'mock-delivery-key', DEEPSEEK_BASE_URL: `http://127.0.0.1:${provider.address().port}`,
       ...probe,
     },
@@ -463,7 +464,30 @@ try {
     content: [{ type: 'text', text: unboundMarker }] })
   const names = await until(() => unboundToolNames, 'unbound model tool catalog')
   assert.ok(!names.some(name => name.startsWith('workbench_')))
-  console.log('PASS: native startup, receipt-gated recovery, no duplicate sessions, native suggestion, presentation, submission, drift, return, persisted acceptance and isolated native review with receipt recovery.')
+  const sessionIds = (await rpc('session/list', {})).items.map(item => item.sessionId).sort()
+  await stop()
+  const backup = join(root, 'backup')
+  const disabled = join(root, 'disabled')
+  const restored = join(root, 'restored')
+  await cp(data, backup, { recursive: true })
+  await cp(backup, disabled, { recursive: true })
+  const beforeRollback = allModelRequests
+  rpc = await start({}, { workbench: false, dataHome: disabled })
+  assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
+  const disabledPage = await rpc.page('/workbench')
+  assert.doesNotMatch(await disabledPage.text(), /<title>DeepSeek 工作台<\/title>/)
+  assert.equal(await rpc.workbench('task.get', { taskId: draft.task.id }, { status: 405 }), undefined)
+  await stop()
+
+  await cp(backup, restored, { recursive: true })
+  rpc = await start({}, { dataHome: restored })
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }), accepted)
+  assert.deepEqual(await rpc.workbench('task.create', brief), draft)
+  assert.deepEqual(await rpc.workbench('task.start', lostStart), unresolved)
+  assert.deepEqual((await rpc('session/list', {})).items.map(item => item.sessionId).sort(), sessionIds)
+  assert.equal((await rpc.workbench('task.conversation', { taskId: draft.task.id, limit: 50 })).sessionId, sessionId)
+  assert.equal(allModelRequests, beforeRollback)
+  console.log('PASS: native delivery, isolated review recovery, persisted acceptance, overlay disablement, and profile backup restore.')
 } finally {
   await stop()
   provider.closeAllConnections()

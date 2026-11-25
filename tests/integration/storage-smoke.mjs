@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
-import { cp, mkdtemp, rm } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDraft, evolveTask } from '../../src/domain/task.mjs'
+import { TASK_DOMAIN } from '../../src/storage/task-repository.mjs'
 import { nativeStorageFixture } from './native-storage-fixture.mjs'
 
 const useStorage = await nativeStorageFixture(process.argv[2] ?? '.')
@@ -57,7 +58,54 @@ try {
       assert.equal(repo.read(id).detail.task.revision, 2)
     })
   }
-  console.log('PASS: native storage atomic revision, request replay, pending intent, reopen and backup recovery.')
+  const recordPath = root => join(root, TASK_DOMAIN, 'tasks', `${id}.json`)
+  const document = JSON.parse(await readFile(recordPath(backup), 'utf8'))
+  const legacyRecord = structuredClone(document.record)
+  delete legacyRecord.stages
+  const legacy = join(temp, 'legacy')
+  await mkdir(legacy)
+  const legacyFile = join(legacy, `${TASK_DOMAIN}.json`)
+  const legacyContents = JSON.stringify({
+    unit: { name: TASK_DOMAIN, version: 1 }, tables: { tasks: { [id]: legacyRecord } },
+  })
+  await writeFile(legacyFile, legacyContents)
+  await useStorage(legacy, async repo => {
+    assert.deepEqual(await repo.exportSnapshot(), exported)
+    assert.deepEqual(repo.read(id).stages, [])
+    const replay = await repo.commit(id, { request: request('ready'), expectedRevision: 0 }, () => {
+      assert.fail('legacy replay must not write')
+    })
+    assert.equal(replay.task.revision, 1)
+  })
+  assert.equal(await readFile(legacyFile, 'utf8'), legacyContents)
+  assert.equal(JSON.parse(await readFile(recordPath(legacy), 'utf8')).version, 1)
+
+  const invalid = join(temp, 'invalid')
+  await cp(backup, invalid, { recursive: true })
+  const invalidRecord = JSON.stringify({ ...document, record: { ...document.record, schemaVersion: 2 } })
+  await writeFile(recordPath(invalid), invalidRecord)
+  await assert.rejects(useStorage(invalid, () => assert.fail('invalid Workbench record opened')), { code: 'invalid-record' })
+  assert.equal(await readFile(recordPath(invalid), 'utf8'), invalidRecord)
+
+  for (const [label, contents] of [
+    ['truncated', '{"version":'],
+    ['foreign', JSON.stringify({ ...document, version: 2 })],
+  ]) {
+    const directory = join(temp, label)
+    await cp(backup, directory, { recursive: true })
+    await writeFile(recordPath(directory), contents)
+    await useStorage(directory, async repo => {
+      assert.equal(repo.read(id), undefined)
+      await assert.rejects(repo.commit(id, { request: request(label), expectedRevision: 2 },
+        () => assert.fail('unreadable record must not be committed')), { code: 'NOT_FOUND' })
+    })
+    assert.equal(await readFile(recordPath(directory), 'utf8'), contents)
+  }
+
+  const restored = join(temp, 'restored')
+  await cp(backup, restored, { recursive: true })
+  await useStorage(restored, async repo => assert.deepEqual(await repo.exportSnapshot(), exported))
+  console.log('PASS: native storage revision and replay, legacy V1 migration, invalid-record behavior, and clean backup restore.')
 } finally {
   await rm(temp, { recursive: true, force: true })
 }
