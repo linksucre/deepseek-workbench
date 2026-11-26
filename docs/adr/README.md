@@ -4,6 +4,7 @@
 | --- | --- | --- |
 | ADR-0001 | [独立 Cordis 扩展](0001-external-bundle.md) | 已接受 |
 | ADR-0002 | [工作台与会话数据分离](0002-task-storage-boundary.md) | 设计基线 |
-| ADR-0003 | [公共契约单一来源](0003-contract-source.md) | 已接受 |
+| ADR-0003 | [公共契约单一来源](0003-contract-source.md) | 由 ADR-0004 继承 |
+| ADR-0004 | [按 API 版本管理公共契约](0004-versioned-api-contracts.md) | 已接受 |
 
 新决策按顺序编号，变更已有决策时链接后继记录和批准依据。与当前代码不一致的决策须在实施工单中标出。

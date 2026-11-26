@@ -132,4 +132,12 @@ DEV-005 评审分支使用本机隔离的 Harness 补丁，按 [任务记录保�
 
 ## 从联调预览升级到 API v2
 
-在替换安装包前停写并备份完整 Harness profile。使用同一份 profile 的副本升级并复验后再继续生产写入。命令客户端从联调地址 `/workbench/v1/command` 换到 `/workbench/v2/command`，工作区发现改用 `/workbench/v2/workspaces`。旧地址暂作为同一 v2 Host 的迁移别名，沿用 v2 形状、回执及原生工具 `workbench_submit`。维护者核对旧客户端切换后再决定撤下别名。核对旧回执时保留原逻辑操作、请求 ID 与输入，升级前后的进程使用独立副本验证；回退用独立的升级前 profile。冻结的原 v1 形状按 [版本设计](design/WORKBENCH-API-VERSIONING.md) 单独评估调用方需求。
+在替换安装包前停写并备份完整 Harness profile。使用同一份 profile 的副本升级并复验后再继续生产写入。命令客户端从联调地址 `/workbench/v1/command` 换到 `/workbench/v2/command`，工作区发现改用 `/workbench/v2/workspaces`。旧地址暂作为同一 v2 Host 的迁移别名，沿用 v2 请求形状和回执。核对旧回执时保留原逻辑操作、请求 ID 与输入。升级前后的进程使用独立副本验证，回退用独立的升级前 profile。
+
+### 调用方核查与别名撤除
+
+DEV-002 在 PR #12 复核了冻结基线 `3fb2b85`、联调基线 `50f748b` 和候选 `b838507` 的仓库源码与测试，并查阅了 GitHub Releases。
+
+- **原 v1 契约。** 冻结基线只有预设和领域代码，未挂载工作台命令或注册提交工具。仓库内的 `artifactIds`、`evidenceRefs` 请求样例用于契约和拒绝回归，未发现使用该请求形状的运行时客户端。GitHub Releases 当时无发布记录。私下分发的试用包和仓库外脚本需维护者确认。
+- **联调 Web 和原生工具。** 联调 Web 使用旧命令和工作区发现地址，候选内置 Web 已切换到 v2。联调版的 `workbench_submit` 使用 `selection` 和按需提供的 `paths`，候选沿用工具名和该输入形状。维护者如确认有外部联调脚本或试用安装，按此核对请求和工具调用。 [契约差异](design/WORKBENCH-API-VERSIONING.md#两版差异)
+- **撤除条件。** 维护者核查外部试用包和脚本，确认已知旧地址调用方均已切换或停用，并在迁移记录中写明结果后，再单独评审撤下别名。核查发现依赖原 v1 形状的调用方时，先依 [版本设计](design/WORKBENCH-API-VERSIONING.md#版本方案) 确定迁移方式或并行支持范围。
