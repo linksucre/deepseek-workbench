@@ -15,3 +15,5 @@
 真实 Host 验证命令为 `node tests/integration/host-delivery-smoke.mjs /path/to/built-deepseek-harness`。模拟模型触发两个原生 present 事件，重启后对冷会话选择产物并核验权限和阶段范围。再次重启前替换文件，使用此前保存的交付版本重新核验。测试使用固定授权和绑定夹具，生产身份接入及验收流程见 DEV-012。
 
 固定产物检查由 [artifact-checks.mjs](artifact-checks.mjs) 编译本机部署规则。[host-delivery.mjs](host-delivery.mjs) 在同一个可信 Run 观察中解析所选产物，再调用检查。[local-files.mjs](local-files.mjs) 用授权文件句柄同时读取 SHA-256、字节数和有界内容。检查所见版本必须等于提交版本。结果使用产物的可信展示引用，和产物同次提交。空文件及不合法的 UTF-8 JSON 产生失败记录。未配置固定检查的条件继续人工验收。
+
+退回后的展示下界取原始阶段下界、此前使用的展示序列和退回观测游标的最大值。旧退回记录缺少游标时仅接受原生时间晚于退回决定的展示。

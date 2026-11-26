@@ -73,6 +73,7 @@ function services(repository) {
     authorize: ({ principal, workspaceId }) => principal === owner && workspaceId === 'project',
     clock: () => now,
     delivery: {
+      observeReturn: () => 4,
       resolve: () => ({ artifacts: [{ id: 'artifact-1', kind: 'file', locator: reference.locator,
         versionKind: 'sha256', version: createHash('sha256').update(contents).digest('hex'), source: reference }], evidence: [] }),
     },

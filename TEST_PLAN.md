@@ -46,3 +46,5 @@ TST-007 更换 Harness 时，在已安装依赖的 Workbench 检出运行 `node 
 TST-010 双版本 profile 验证使用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-profile-upgrade-from=/path/to/legacy-workbench`。旧 Workbench 须支持旧版审阅回送，例如 `8fde87b`。同一 Harness 测试中，两版 Workbench 固定同一个已构建的提交。跨 Harness 测试另加 `--review-legacy-harness=/path/to/built/legacy-harness`，两版 Workbench 分别固定各自对应的 Harness 提交。脚本用模拟模型和临时 profile 让旧插件实际写入回送及普通消息，再以新插件升级同一 profile。核对旧请求重放、冲突识别和新请求的单次受理，并用停写备份的副本启动旧插件和对应的 Host，确认回退后的记录与回执、备份源文件字节保持，以及升级副本仍能冷重放新请求。该命令单独运行。
 
 纯文档 PR 仍执行仓库门禁。若差异中的所有路径都在 CI 的 Markdown 白名单内，`Harness integration` 在 Linux 上记录适用范围。混合变更、运行代码、契约、测试、工作流和主分支推送继续在 macOS 构建固定 Harness 并运行完整集成。
+
+TST-012 的真实 Host 回归先提交较早的展示，退回并冷启动后拒绝按文件或最近展示使用退回前未选产物。重新展示后允许提交，且旧退回请求可原样重放。

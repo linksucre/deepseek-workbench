@@ -103,6 +103,11 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
           ],
         }]
       }
+      if (command.kind === 'return') {
+        stages = stages.map(stage => stage.runId !== detail.task.activeRunId ? stage : {
+          ...stage, deliveryAfterSeq: command.deliveryAfterSeq,
+        })
+      }
       if (command.kind === 'choose' && detail.task.activeRunId !== null) {
         stages = stages.map(stage => stage.runId !== detail.task.activeRunId ? stage : {
           ...stage, choices: [...stage.choices,
@@ -342,8 +347,12 @@ export function createTaskService({ repository, authorize, delivery, clock = () 
             record, principal, now, artifacts: artifacts.filter(item => selected.artifactIds.includes(item.id)),
           })
           : []
+        const deliveryAfterSeq = input.verdict === 'return'
+          ? await delivery.observeReturn({ record, principal })
+          : undefined
         return {
           kind: input.verdict, actorId: user(principal), submissionId: input.submissionId,
+          deliveryAfterSeq,
           reason: input.reason, observedVersions,
           reviewEvidence: (input.confirmedCriteria ?? []).map(criterionId => ({
             criterionId, kind: 'user', outcome: 'pass', source: null,

@@ -1104,16 +1104,42 @@ hostSmoke: try {
   const changedSubmit = { ...submit, paths: ['second.md'] }
   assert.equal((await rpc.workbench('task.submit', changedSubmit, { status: 400 })).code, 'INVALID')
   assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), singleSubmission)
-  const approve = { taskId: fresh.task.id, expectedRevision: singleSubmission.task.revision,
-    submissionId: singleSubmission.task.currentSubmissionId, verdict: 'accept', reason: null,
+  const returnOwnerSubmission = { taskId: fresh.task.id, expectedRevision: singleSubmission.task.revision,
+    submissionId: singleSubmission.task.currentSubmissionId, verdict: 'return', reason: 'Re-present after return',
+    requestId: 'owner-return' }
+  const ownerReturned = await rpc.workbench('task.decide', returnOwnerSubmission)
+  await stop()
+  rpc = await start()
+  assert.deepEqual(await rpc.workbench('task.decide', returnOwnerSubmission), ownerReturned)
+  const reSubmit = { taskId: fresh.task.id, expectedRevision: ownerReturned.task.revision, requestId: 'owner-resubmit',
+    selection: 'files', paths: ['second.md'] }
+  assert.equal((await rpc.workbench('task.submit', reSubmit, { status: 400 })).code, 'INVALID')
+  assert.equal((await rpc.workbench('task.submit', { taskId: reSubmit.taskId, expectedRevision: reSubmit.expectedRevision,
+    requestId: 'owner-resubmit-latest', selection: 'latest-presentation' }, { status: 400 })).code, 'INVALID')
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), ownerReturned)
+  ownerPresentationFiles.push('second.md')
+  await rpc.workbench('task.prompt', { taskId: fresh.task.id, expectedRevision: ownerReturned.task.revision,
+    requestId: 'owner-presentation-after-return', text: submitMarker })
+  const freshPresentation = await until(async () => {
+    const state = await rpc('session/state', { sessionId: parentId })
+    if (state.running || state.queue?.length !== 0) return
+    const page = await rpc('session/events', { address: { kind: 'session', sessionId: parentId }, maxMessages: 30 })
+    return page.records.map(record => record.event).find(event =>
+      event.type === 'deliverables/presented' && event.seq > presentations[1].seq)
+  }, 'fresh presentation after return')
+  const ownerResubmitted = await rpc.workbench('task.submit', reSubmit)
+  assert.equal(ownerResubmitted.submissions.length, 2)
+  assert.deepEqual(JSON.parse(ownerResubmitted.artifacts.at(-1).source.locator), [parentId, freshPresentation.seq, 0])
+  const approve = { taskId: fresh.task.id, expectedRevision: ownerResubmitted.task.revision,
+    submissionId: ownerResubmitted.task.currentSubmissionId, verdict: 'accept', reason: null,
     confirmedCriteria: ['facts'] }
   const decisions = await Promise.all(['owner-approve-a', 'owner-approve-b'].map(requestId =>
     rpc.workbench('task.decide', { ...approve, requestId }, { status: [200, 409] })))
   assert.equal(decisions.filter(item => item.code === 'REVISION_CONFLICT').length, 1)
   const oneDecision = decisions.find(item => item.task?.status === 'accepted')
   assert.ok(oneDecision)
-  assert.equal(oneDecision.task.revision, singleSubmission.task.revision + 1)
-  assert.equal(oneDecision.decisions.length, 1)
+  assert.equal(oneDecision.task.revision, ownerResubmitted.task.revision + 1)
+  assert.deepEqual(oneDecision.decisions.map(decision => decision.verdict), ['return', 'accept'])
   assert.deepEqual(await rpc.workbench('task.get', { taskId: fresh.task.id }), oneDecision)
 
   const loose = await rpc('session/create', { workspaceId: workspace.workspaceId, agentPreset: 'task-collaborator' })

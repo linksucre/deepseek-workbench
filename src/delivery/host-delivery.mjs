@@ -35,6 +35,8 @@ export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWork
         cwd,
         authorizePath: path => canReadFile({ principal, task, run, path }),
       })
+      if (!workspaceRegistry.get(task.workspaceId)?.sessionIds.includes(run.rootSessionId) ||
+          await canUseWorkspace({ principal, task, run }) !== true) throw unavailable()
       return await action({ sessionId: run.rootSessionId, task, events, files })
     } finally {
       observation[Symbol.dispose]()
@@ -46,8 +48,9 @@ export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWork
       const observedThrough = events.at(-1)?.seq ?? -1
       const beforeSeq = Math.min(observedThrough + 1, input.beforeSeq ?? observedThrough + 1)
       const artifacts = await resolvePresentation({
-        sessionId, events, files,
-        stage: { afterSeq: input.afterSeq, beforeSeq },
+        sessionId, events: input.legacyReturnedAt === undefined ? events
+          : events.filter(event => Date.parse(event.time) > input.legacyReturnedAt),
+        files, stage: { afterSeq: input.afterSeq, beforeSeq },
         selection: input.selection, now: input.now, newArtifactId: input.newArtifactId,
       })
       const evidence = await checkArtifacts({ task, files, artifacts, now: input.now })
@@ -61,6 +64,9 @@ export function createHostDelivery({ sessionQuery, workspaceRegistry, canUseWork
       return (await resolveSubmission(input)).artifacts
     },
 
+    observeThrough(input) {
+      return read(input, ({ events }) => events.at(-1)?.seq ?? -1)
+    },
     observe(input) {
       return read(input, ({ files }) => observeArtifactVersions(input.artifacts, files))
     },

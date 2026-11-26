@@ -40,7 +40,8 @@ try {
     async resolve({ record, principal, input }) {
       calls += 1
       const sessionId = principal.sessionId
-      const stage = { afterSeq: record.stages.at(-1).afterSeq, beforeSeq: seq + 2 }
+      const currentStage = record.stages.at(-1)
+      const stage = { afterSeq: currentStage.deliveryAfterSeq ?? currentStage.afterSeq, beforeSeq: seq + 2 }
       return {
         artifacts: await resolvePresentation({
           sessionId, stage, selection: input.selection, files, now, newArtifactId: () => `file-${seq}`,
@@ -52,6 +53,7 @@ try {
         }),
       }
     },
+    observeReturn: () => seq + 1,
     observe: ({ artifacts }) => observeArtifactVersions(artifacts, files),
   }
   const service = repository => createTaskService({
@@ -110,6 +112,7 @@ try {
     assert.deepEqual(current.decisions.map(item => item.verdict), ['return', 'accept'])
     const stage = repo.read(current.task.id).stages[0]
     assert.equal(stage.stageId, current.runs[0].id)
+    assert.equal(stage.deliveryAfterSeq, 4)
     assert.equal(stage.afterSeq, 0)
     assert.deepEqual(stage.choices.map(item => item.choice.source), ['agent', 'user'])
     assert.ok(stage.choices[0].revision < stage.choices[1].revision)

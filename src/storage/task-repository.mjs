@@ -20,6 +20,7 @@ export async function openTaskRepository({ storageDomain, defineDomain, domainTa
   const stage = z.strictObject({
     stageId: text, runId: text, afterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
     openedAt: text,
+    deliveryAfterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).optional(),
     legacyForwardThrough: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
     choices: z.array(z.strictObject({
       revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
