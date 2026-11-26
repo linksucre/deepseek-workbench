@@ -2,7 +2,7 @@
 
 要求 Node 24.22.3、基线指定提交的 Harness 和它要求的 pnpm。上游目录与本仓库分别管理。
 
-1. 根据 [harness-baseline.json](../harness-baseline.json) 准备上游干净 checkout，执行 `corepack pnpm install --frozen-lockfile` 和 `corepack pnpm run build`。
+1. 根据 [harness-baseline.json](../harness-baseline.json) 检出公开的 Harness `upstreamCommit`。从 Workbench 仓库执行 `node scripts/materialize-harness.mjs /path/to/harness-checkout`，再在还原后的 Harness 目录执行 `corepack pnpm install --frozen-lockfile` 和 `corepack pnpm run build`。脚本验证公开基线、[增量包](../vendor/harness/storage-records.bundle) 的 SHA-256 和目标 Git 提交。已还原的目录可直接构建。
 2. 在本仓库执行 `npm ci` 与 `npm run check`，再执行 `npm run test:smoke -- /path/to/built/deepseek-harness`。
 3. 从工作台仓库生成启用完整本地 Host 扩展的 overlay。输出路径应不存在，生成器会验证上游提交，并将本地入口及依赖位置写入该文件。
 

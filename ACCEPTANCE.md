@@ -61,3 +61,5 @@ TST-010 `b474afb` 另验证原生回送内容块。候选曾将拥有相同拼�
 ## 合并后的本地候选 `ce03d3d`
 
 候选已包含回执内容块修复和两项跨 Harness 升级试验。临时绑定本地 `f17e00c4ea` 后，27 项回归、差异门禁、actionlint、预设、存储、应用、资料、用量、worktree、真实 Host 审阅和拒绝专项、跨 Harness 升级与回退、独立安装的 Chromium，以及 AC-014 分页均通过。本轮使用本地模拟模型。主分支 `243e5d6` 的两项远端门禁已通过，覆盖主分支的公开 Harness 基线。候选仍待公共 API 版本决定、获批的远端 Harness 来源和 TST-005 真实模型试跑。[主分支 CI](https://github.com/linksucre/deepseek-workbench/actions/runs/45659869623)
+
+候选现在从公开基础提交与仓库内的存储补丁增量包还原同一 Harness 提交。原 `not our ref` 记录保留为历史，当前集成结果以更新后的 CI 作业为准。

@@ -68,7 +68,7 @@ jobs:
         if: needs.repository.outputs.docs_only != 'true'
         id: baseline
         run: |
-          node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+b.commit)' >> "$GITHUB_OUTPUT"
+          node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+(b.upstreamCommit ?? b.commit))' >> "$GITHUB_OUTPUT"
       - if: needs.repository.outputs.docs_only != 'true'
         uses: actions/checkout@v4
         with:
@@ -76,6 +76,9 @@ jobs:
           ref: ${{ steps.baseline.outputs.commit }}
           path: upstream
           persist-credentials: false
+      - name: Materialize pinned Harness
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node scripts/materialize-harness.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Build pinned Harness
         if: needs.repository.outputs.docs_only != 'true'
         working-directory: upstream

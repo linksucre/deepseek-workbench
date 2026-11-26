@@ -48,3 +48,5 @@ TST-010 双版本 profile 验证使用 `node tests/integration/host-delivery-smo
 纯文档 PR 仍执行仓库门禁。若差异中的所有路径都在 CI 的 Markdown 白名单内，`Harness integration` 在 Linux 上记录适用范围。混合变更、运行代码、契约、测试、工作流和主分支推送继续在 macOS 构建固定 Harness 并运行完整集成。
 
 TST-012 的真实 Host 回归先提交较早的展示，退回并冷启动后拒绝按文件或最近展示使用退回前未选产物。重新展示后允许提交，且旧退回请求可原样重放。
+
+TST-007 的候选安装从公开 Harness 提交开始，还原仓库内的固定存储补丁。错误基线、校验和不匹配或目标提交不符时终止构建。真实 Host 测试和安装归档均使用同一个目标提交。
