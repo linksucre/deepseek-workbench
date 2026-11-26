@@ -60,4 +60,4 @@ reserveStart 只持久化意图，将任务置为待核对。原生创建由会�
 
 退回使用已授权当前根会话的原生观察记录截止游标，并与退回决定、revision 和回执一起提交。重放读取原回执。退回后的按文件或最近展示提交都须使用更新的原生事件。旧记录仅消费原生时间晚于退回决定的展示。
 
-Workbench 命令与工作区发现走 `/workbench/v2/command` 和 `/workbench/v2/workspaces`。Host 用 v2 契约校验，原生提交工具沿用 `workbench_submit`，保持联调版的输入形状与逻辑操作身份。
+Workbench 命令与工作区发现走 `/workbench/v2/command` 和 `/workbench/v2/workspaces`。旧命令地址作为迁移别名，与正式 v2 地址共用同一处理器、授权和回执。Host 用 v2 契约校验，原生提交工具沿用 `workbench_submit`，保持联调版的输入形状与逻辑操作身份。

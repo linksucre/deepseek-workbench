@@ -18,11 +18,13 @@ export async function mountWorkbenchPage(ctx) {
         : new Response('forbidden', { status: 403 }),
     }))
   }
-  ctx.effect(() => ctx.webServer.register({
-    kind: 'exact', path: '/workbench/v2/workspaces', auth: 'required',
-    resource: async (_request, peer) => peer?.principal.kind === 'owner'
-      ? Response.json(ctx.workspaceRegistry.list().map(({ id, title, path }) => ({ id, title, path })),
-        { headers: { 'cache-control': 'no-store' } })
-      : new Response('forbidden', { status: 403 }),
-  }))
+  for (const path of ['/workbench/v2/workspaces', '/workbench/v1/workspaces']) {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path, auth: 'required',
+      resource: async (_request, peer) => peer?.principal.kind === 'owner'
+        ? Response.json(ctx.workspaceRegistry.list().map(({ id, title, path }) => ({ id, title, path })),
+          { headers: { 'cache-control': 'no-store' } })
+        : new Response('forbidden', { status: 403 }),
+    }))
+  }
 }

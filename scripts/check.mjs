@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +93,15 @@ function checkContract(version) {
   checkRefs(schema)
   return `v${version}: ${index.operations.length}`
 }
+// Original v1 files from main at 3fb2b85, before the preview API landed.
+const frozenV1 = {
+  'operations.json': 'd6916ac490aef7f49f6abea3dabc43b330bbadd6eaf03b00d6daecc7ce0fd8e2',
+  'schemas.json': '1b368a80c2804d29feb922cad050a3ad11bee99729eba714b0568362059daaeb',
+}
+for (const [file, expected] of Object.entries(frozenV1)) {
+  const bytes = readFileSync(join(root, 'contracts/v1', file))
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, `Frozen v1 contract changed: ${file}`)
+}
 const contractCounts = [1, 2].map(checkContract).join(', ')
 const baseline = json('harness-baseline.json')
 assert.match(baseline.commit, /^[\da-f]{40}$/)
@@ -115,7 +125,6 @@ if (process.argv.includes('--base')) {
   const base = process.argv[process.argv.indexOf('--base') + 1]
   assert.match(base ?? '', /^[\da-f]{40}$/)
   const changed = new Set(git('diff', '--no-renames', '--name-only', '-z', `${base}...HEAD`).split('\0'))
-  assert.ok(![...changed].some(file => file.startsWith('contracts/v1/')), 'The v1 contract is frozen')
   for (const file of changed) {
     const module = /^src\/([^/]+)\//.exec(file)?.[1]
     if (module && !file.endsWith('.md')) {

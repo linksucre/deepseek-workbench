@@ -12,7 +12,7 @@ import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
 
-const endpoint = '/workbench/v2/command'
+const endpoints = ['/workbench/v2/command', '/workbench/v1/command']
 const owner = Object.freeze({ kind: 'user', actorId: 'harness-owner' })
 const loopback = new Set(['127.0.0.1', '::1'])
 const readJSON = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
@@ -143,34 +143,36 @@ export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domain
     return [id, { run, validateInput: validator(input), validateOutput: validator(output) }]
   }))
 
-  ctx.effect(() => ctx.webServer.register({
-    kind: 'exact', path: endpoint, auth: 'required',
-    async handler(req, res, peer) {
-      if (peer?.principal.kind !== 'owner') return refuse(res, 'FORBIDDEN', 'Host owner access required')
-      if (req.method !== 'POST') {
-        res.setHeader('allow', 'POST')
-        send(res, 405, { error: { code: 'INVALID', message: 'Use POST for workbench commands' } })
-        return
+  async function handleCommand(req, res, peer) {
+    if (peer?.principal.kind !== 'owner') return refuse(res, 'FORBIDDEN', 'Host owner access required')
+    if (req.method !== 'POST') {
+      res.setHeader('allow', 'POST')
+      send(res, 405, { error: { code: 'INVALID', message: 'Use POST for workbench commands' } })
+      return
+    }
+    if (req.headers.origin !== ctx.webServer.getOrigin()) return refuse(res, 'FORBIDDEN', 'Same-origin request required')
+    if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
+      return refuse(res, 'INVALID', 'application/json request required')
+    }
+    try {
+      const body = await readBody(req)
+      const command = commands.get(body?.operation)
+      if (!command) return refuse(res, 'UNSUPPORTED', 'Workbench command is not available')
+      if (!command.validateInput(body.input)) return refuse(res, 'INVALID', 'Request does not match the command contract')
+      const result = await command.run(body.input)
+      if (!command.validateOutput(result)) return refuse(res, 'HOST_UNAVAILABLE', 'Command result did not match its contract')
+      send(res, 200, { result })
+    } catch (error) {
+      if (error instanceof TaskError && Object.hasOwn(statusByCode, error.code)) {
+        refuse(res, error.code, error.message)
+      } else {
+        refuse(res, 'HOST_UNAVAILABLE', 'Workbench command failed')
       }
-      if (req.headers.origin !== ctx.webServer.getOrigin()) return refuse(res, 'FORBIDDEN', 'Same-origin request required')
-      if (req.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
-        return refuse(res, 'INVALID', 'application/json request required')
-      }
-      try {
-        const body = await readBody(req)
-        const command = commands.get(body?.operation)
-        if (!command) return refuse(res, 'UNSUPPORTED', 'Workbench command is not available')
-        if (!command.validateInput(body.input)) return refuse(res, 'INVALID', 'Request does not match the command contract')
-        const result = await command.run(body.input)
-        if (!command.validateOutput(result)) return refuse(res, 'HOST_UNAVAILABLE', 'Command result did not match its contract')
-        send(res, 200, { result })
-      } catch (error) {
-        if (error instanceof TaskError && Object.hasOwn(statusByCode, error.code)) {
-          refuse(res, error.code, error.message)
-        } else {
-          refuse(res, 'HOST_UNAVAILABLE', 'Workbench command failed')
-        }
-      }
-    },
-  }))
+    }
+  }
+  for (const path of endpoints) {
+    ctx.effect(() => ctx.webServer.register({
+      kind: 'exact', path, auth: 'required', handler: handleCommand,
+    }))
+  }
 }

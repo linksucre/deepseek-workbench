@@ -275,3 +275,7 @@ DEV-006 `6aa9aee` 修复任务对话和新结算审阅摘要的 Unicode 字符�
 DEV-002 API v2 集成使用 `integration/workbench-api-v2`。基线为 `e193abd` 与独立契约提交 `2a2a70f`。验证 Host、Web、包内契约与试用 profile 的历史回执。
 
 API v2 本地候选通过 30 项回归、仓库门禁、固定 Harness 的 Host 集成、独立安装包 Chromium 和试用 profile 的跨 API 回执重放与备份回退。验证期间保持原公共 v1 文件字节一致。该候选进入本地复核，等独立契约评审后再推进运行时合入。
+
+PR #6 已合入 `main@50f748b`。DEV-002 续用 `integration/workbench-api-v2` 对接该基线。已合入的旧地址作为迁移别名，原 v1 文件恢复到 `3fb2b85` 并由字节校验门禁固定。
+
+在合入后的基线上复验 30 项仓库回归、固定 Harness 的跨版本 profile 迁移和独立 npm 归档 Chromium。迁移试验覆盖旧别名权限、旧契约形状拒绝、同 ID 并发创建只存一条、消息回放和备份回退。修改冻结 schema 的空白也会触发门禁。

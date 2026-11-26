@@ -7,7 +7,7 @@
 | v1 | [operations.json](contracts/v1/operations.json) | [schemas.json](contracts/v1/schemas.json) | 冻结的原始设计基线 |
 | v2 | [operations.json](contracts/v2/operations.json) | [schemas.json](contracts/v2/schemas.json) | 工作台命令及原生工具接入基线 |
 
-v2 的命令路径为 `/workbench/v2/command`。此前联调包在 `/workbench/v1/command` 上使用与 v2 对应的请求形状。部署时按 [版本与兼容设计](docs/design/WORKBENCH-API-VERSIONING.md) 核对旧调用方、历史会话和端点迁移范围。
+v2 的命令路径为 `/workbench/v2/command`。PR #6 已合入的旧联调地址 `/workbench/v1/command` 在迁移期间作为别名，使用相同的 v2 请求形状、认证及回执。原 v1 契约保留为冻结基线。部署时按 [版本与兼容设计](docs/design/WORKBENCH-API-VERSIONING.md) 核对旧调用方、历史会话和端点迁移范围。
 
 应用边界按操作索引验证输入和输出。Web 通过宿主认证及 Remote 访问；模型只见 `agent.suggest` 与 `agent.submit` 的受限公开输入；Host 用当前 ToolExecution 推导绑定。适配层从当前会话推导任务、身份及 requestId。用户决定不暴露给模型。无访问权与不可见资源可统一返回 NOT_FOUND，具体内部原因不写入模型输出。
 

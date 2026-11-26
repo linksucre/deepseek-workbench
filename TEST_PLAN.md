@@ -53,4 +53,4 @@ TST-007 的候选安装从公开 Harness 提交开始，还原仓库内的固定
 
 TST-009 通过 [契约版本回归](tests/regression/api-versioning.test.mjs) 验证 v1 与 v2 能同时加载，以及提交和验收响应的版本边界。
 
-用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-profile-upgrade-from=/path/to/preview-workbench --verify-api-upgrade` 验证 API 迁移。预览检出为 `e193abd` 且已安装依赖。用预览 v1 写入普通消息和审阅回送，通过 v2 冷重放，检查冲突、原生消息去重、备份回退，以及预览地址在新 Host 上拒绝调用。
+用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-profile-upgrade-from=/path/to/preview-workbench --verify-api-upgrade` 验证 API 迁移。旧检出为已合入主线的 `50f748b`（或内容相同的 `e193abd`），且已安装依赖。用预览 v1 写入普通消息和审阅回送，通过 v2 冷重放，检查冲突、原生消息去重、备份回退、旧别名的认证与同源校验、原 v1 请求形状拒绝，以及两地址并发创建时只写入一条任务。

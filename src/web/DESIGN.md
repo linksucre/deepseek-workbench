@@ -40,4 +40,4 @@
 
 回送在同一标签页保留待确认的请求 ID、任务及原 revision。页面重新加载时提供「核对回送」，重发同一请求并读取既有结果。成功或收到明确状态拒绝后重新读取任务 revision。用户再次发送已明确拒绝的回送时使用新的请求 ID 和最新 revision。
 
-Workbench 命令与工作区发现走 `/workbench/v2/command` 和 `/workbench/v2/workspaces`。Host 用 v2 契约校验，原生提交工具沿用 `workbench_submit`，保持联调版的输入形状与逻辑操作身份。
+Workbench 命令与工作区发现走 `/workbench/v2/command` 和 `/workbench/v2/workspaces`。旧工作区发现地址作为迁移别名。页面自身只调用 v2。Host 用 v2 契约校验，原生提交工具沿用 `workbench_submit`，保持联调版的输入形状与逻辑操作身份。

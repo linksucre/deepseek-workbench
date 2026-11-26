@@ -304,8 +304,32 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
   const conflicting = { ...forward, requestId: 'legacy-ordinary' }
   if (verifyApiUpgrade) {
-    await rpc.workbench('task.get', { taskId }, { apiVersion: 1, status: [404, 405] })
-    assert.equal((await rpc.workbench('task.prompt', { ...ordinary, text: 'Changed prompt' }, { status: 400 })).code, 'INVALID')
+    const preview = { apiVersion: 1 }
+    assert.deepEqual(await rpc.workbench('task.get', { taskId }, preview), before.detail)
+    assert.deepEqual(await rpc.workbench('task.prompt', ordinary, preview), ack)
+    await rpc.workbench('task.get', { taskId }, { ...preview, anonymous: true, status: 401 })
+    await rpc.workbench('task.get', { taskId }, { ...preview, origin: 'http://localhost:9', status: 403 })
+    assert.equal((await rpc.workbench('task.prompt', { ...ordinary, text: 'Changed prompt' }, {
+      ...preview, status: 400,
+    })).code, 'INVALID')
+    assert.deepEqual(await rpc.workbench('task.submit', {
+      taskId, requestId: 'old-v1-shape', expectedRevision: before.detail.task.revision,
+      artifactIds: [randomUUID()], evidenceRefs: [],
+    }, { ...preview, status: 400 }), { code: 'INVALID', message: 'Request does not match the command contract' })
+    const spaces = await rpc.page('/workbench/v2/workspaces')
+    const previewSpaces = await rpc.page('/workbench/v1/workspaces')
+    assert.equal(spaces.status, 200)
+    assert.equal(previewSpaces.status, 200)
+    assert.deepEqual(await previewSpaces.json(), await spaces.json())
+    assert.equal((await rpc.page('/workbench/v1/workspaces', { anonymous: true })).status, 401)
+    const newBrief = { ...brief, requestId: 'cross-version-create', title: 'Cross-version replay' }
+    const [viaV2, viaPreview] = await Promise.all([
+      rpc.workbench('task.create', newBrief),
+      rpc.workbench('task.create', newBrief, preview),
+    ])
+    assert.deepEqual(viaPreview, viaV2)
+    const taskPage = await rpc.workbench('task.list', { workspaceId: brief.workspaceId, cursor: null, limit: 50 })
+    assert.equal(taskPage.items.filter(item => item.title === newBrief.title).length, 1)
   } else {
     assert.equal((await rpc.workbench('task.review.forward', conflicting, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
   }
@@ -339,7 +363,7 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   assert.equal((await byId(newId)).length, 1)
   assert.equal(allModelRequests, afterWriteRequests)
   console.log(verifyApiUpgrade
-    ? 'PASS: preview v1 receipts replay through v2 with no duplicate writes, and the backup rolls back to preview v1.'
+    ? 'PASS: preview v1 and v2 share authorization, validation and receipts; profile upgrade and independent rollback passed.'
     : 'PASS: real legacy forward and ordinary prompt survive profile upgrade and independent backup rollback.')
 }
 
@@ -395,6 +419,8 @@ hostSmoke: try {
   assert.equal((await rpc.workbench('task.create', { ...brief, workspaceId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
   const draft = await rpc.workbench('task.create', brief)
   await rpc.workbench('task.get', { taskId: draft.task.id }, { anonymous: true, status: 401 })
+  assert.deepEqual(await rpc.workbench('task.get', { taskId: draft.task.id }, { apiVersion: 1 }), draft)
+  await rpc.workbench('task.get', { taskId: draft.task.id }, { apiVersion: 1, anonymous: true, status: 401 })
   assert.equal((await rpc.workbench('task.get', { taskId: randomUUID() }, { status: 404 })).code, 'NOT_FOUND')
   const emptyWorkspaceTasks = { workspaceId: otherWorkspace.workspaceId, limit: 1, cursor: null }
   assert.deepEqual((await rpc.workbench('task.list', emptyWorkspaceTasks)).items, [])

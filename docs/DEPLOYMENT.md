@@ -132,4 +132,4 @@ DEV-005 评审分支使用本机隔离的 Harness 补丁，按 [任务记录保�
 
 ## 从联调预览升级到 API v2
 
-在替换安装包前停写并备份完整 Harness profile。使用同一份 profile 的副本升级并复验后再继续生产写入。命令客户端从联调地址 `/workbench/v1/command` 换到 `/workbench/v2/command`，工作区发现改用 `/workbench/v2/workspaces`。联调版已有的 v2 形状和原生工具 `workbench_submit` 保持兼容。核对旧回执时保留原逻辑操作、请求 ID 与输入，升级前后的进程使用独立副本验证；回退用独立的升级前 profile。冻结的原 v1 形状按 [版本设计](design/WORKBENCH-API-VERSIONING.md) 单独评估调用方需求。
+在替换安装包前停写并备份完整 Harness profile。使用同一份 profile 的副本升级并复验后再继续生产写入。命令客户端从联调地址 `/workbench/v1/command` 换到 `/workbench/v2/command`，工作区发现改用 `/workbench/v2/workspaces`。旧地址暂作为同一 v2 Host 的迁移别名，沿用 v2 形状、回执及原生工具 `workbench_submit`。维护者核对旧客户端切换后再决定撤下别名。核对旧回执时保留原逻辑操作、请求 ID 与输入，升级前后的进程使用独立副本验证；回退用独立的升级前 profile。冻结的原 v1 形状按 [版本设计](design/WORKBENCH-API-VERSIONING.md) 单独评估调用方需求。
