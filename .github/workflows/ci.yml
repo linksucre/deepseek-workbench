@@ -98,6 +98,22 @@ jobs:
       - name: Verify a confirmed forward refusal
         if: needs.repository.outputs.docs_only != 'true'
         run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" --review-recovery-regressions=forward-pre-admission
+      - name: Check out the pre-v2 Workbench baseline
+        if: needs.repository.outputs.docs_only != 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: 50f748bb2ad59f6a583ddeedc0cf6065cd165308
+          path: preview-workbench
+          persist-credentials: false
+      - name: Install pre-v2 Workbench dependencies
+        if: needs.repository.outputs.docs_only != 'true'
+        working-directory: preview-workbench
+        run: npm ci
+      - name: Verify API v2 profile migration
+        if: needs.repository.outputs.docs_only != 'true'
+        run: |
+          node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" \
+            --review-profile-upgrade-from="$GITHUB_WORKSPACE/preview-workbench" --verify-api-upgrade
       - if: needs.repository.outputs.docs_only != 'true'
         run: node tests/integration/usage-host-smoke.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Verify persisted task context
