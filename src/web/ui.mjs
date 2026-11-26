@@ -61,7 +61,7 @@ async function request(path, options = {}) {
 const post = (path, body) => request(path, {
   method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 })
-const command = async (operation, input) => (await post('/workbench/v1/command', { operation, input })).result
+const command = async (operation, input) => (await post('/workbench/v2/command', { operation, input })).result
 
 async function mutate(operation, input) {
   const key = JSON.stringify([operation, input])
@@ -98,7 +98,7 @@ async function perform(action, errorSink = message => feedback(message, true)) {
 }
 
 async function loadWorkspaces(preferred) {
-  const spaces = await request('/workbench/v1/workspaces')
+  const spaces = await request('/workbench/v2/workspaces')
   const scope = workspaceLoadPending ? workspace.value : preferred
   workspace.replaceChildren(...spaces.map(space => {
     const option = node('option', space.title)

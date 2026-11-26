@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -66,25 +67,42 @@ function checkDependencies(id, ancestors = []) {
 }
 for (const id of tasks) checkDependencies(id)
 
-const schema = json('contracts/v1/schemas.json')
-verifySchemaMeta(schema)
-const operations = json('contracts/v1/operations.json')
-assert.equal(operations.version, 1)
-assert.ok(Object.hasOwn(schema.$defs, operations.error))
-unique(operations.operations.map(operation => operation.id), 'API operation')
-for (const operation of operations.operations) {
-  assert.ok(requirements.has(operation.requirement), `Unknown requirement for ${operation.id}`)
-  assert.ok(['user', 'host-bound-agent'].includes(operation.actor))
-  for (const key of [operation.input, operation.output]) assert.ok(Object.hasOwn(schema.$defs, key), `Unknown schema ${key}`)
-}
-function checkRefs(value) {
-  if (!value || typeof value !== 'object') return
-  if (Object.hasOwn(value, '$ref')) {
-    assert.ok(value.$ref.startsWith('#/$defs/') && Object.hasOwn(schema.$defs, value.$ref.slice(8)), `Unresolved ref ${value.$ref}`)
+function checkContract(version) {
+  const directory = `contracts/v${version}`
+  const schema = json(`${directory}/schemas.json`)
+  const index = json(`${directory}/operations.json`)
+  verifySchemaMeta(schema)
+  assert.equal(schema.$id, `urn:deepseek-workbench:v${version}`)
+  assert.equal(index.version, version)
+  assert.ok(Object.hasOwn(schema.$defs, index.error))
+  unique(index.operations.map(operation => operation.id), `API v${version} operation`)
+  for (const operation of index.operations) {
+    assert.ok(requirements.has(operation.requirement), `Unknown requirement for ${operation.id}`)
+    assert.ok(['user', 'host-bound-agent'].includes(operation.actor))
+    for (const type of [operation.input, operation.output]) {
+      assert.ok(Object.hasOwn(schema.$defs, type), `Unknown schema ${type} in ${directory}`)
+    }
   }
-  for (const child of Object.values(value)) checkRefs(child)
+  function checkRefs(value) {
+    if (!value || typeof value !== 'object') return
+    if (Object.hasOwn(value, '$ref')) {
+      assert.ok(value.$ref.startsWith('#/$defs/') && Object.hasOwn(schema.$defs, value.$ref.slice(8)), `Unresolved ref ${value.$ref}`)
+    }
+    for (const child of Object.values(value)) checkRefs(child)
+  }
+  checkRefs(schema)
+  return `v${version}: ${index.operations.length}`
 }
-checkRefs(schema)
+// Original v1 files from main at 3fb2b85, before the preview API landed.
+const frozenV1 = {
+  'operations.json': 'd6916ac490aef7f49f6abea3dabc43b330bbadd6eaf03b00d6daecc7ce0fd8e2',
+  'schemas.json': '1b368a80c2804d29feb922cad050a3ad11bee99729eba714b0568362059daaeb',
+}
+for (const [file, expected] of Object.entries(frozenV1)) {
+  const bytes = readFileSync(join(root, 'contracts/v1', file))
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, `Frozen v1 contract changed: ${file}`)
+}
+const contractCounts = [1, 2].map(checkContract).join(', ')
 const baseline = json('harness-baseline.json')
 assert.match(baseline.commit, /^[\da-f]{40}$/)
 assert.equal(json('package.json').engines.dsh, baseline.version)
@@ -120,4 +138,4 @@ if (process.argv.includes('--base')) {
     }
   }
 }
-console.log(`PASS: ${requirements.size} requirements, ${tasks.size} tasks, ${tests.size} test cases, ${acceptance.length} acceptance criteria, ${operations.operations.length} API operations.`)
+console.log(`PASS: ${requirements.size} requirements, ${tasks.size} tasks, ${tests.size} test cases, ${acceptance.length} acceptance criteria, API operations (${contractCounts}).`)
