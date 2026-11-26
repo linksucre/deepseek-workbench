@@ -11,6 +11,8 @@ jobs:
   repository:
     name: Repository gate
     runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.scope.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,28 +27,60 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: npm run check -- --base "$BASE_SHA"
+      - name: Classify integration scope
+        id: scope
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git diff --no-renames --name-only -z "$BASE_SHA" HEAD > "$RUNNER_TEMP/workbench-paths"
+          docs_only=false
+          if [ -s "$RUNNER_TEMP/workbench-paths" ]; then
+            docs_only=true
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                README.md|CHANGELOG.md|ACCEPTANCE.md|TASKS.md|TEST_PLAN.md|docs/*.md) ;;
+                *) docs_only=false; break ;;
+              esac
+            done < "$RUNNER_TEMP/workbench-paths"
+          fi
+          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
   integration:
     name: Harness integration
-    runs-on: macos-latest
+    needs: repository
+    if: ${{ always() }}
+    runs-on: ${{ needs.repository.outputs.docs_only == 'true' && 'ubuntu-latest' || 'macos-latest' }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Require successful repository gate
+        if: needs.repository.result != 'success'
+        run: exit 1
+      - name: Record documentation fast path
+        if: needs.repository.outputs.docs_only == 'true'
+        run: echo 'Only allowlisted Markdown paths changed. Repository and documentation checks passed.' >> "$GITHUB_STEP_SUMMARY"
+      - if: needs.repository.outputs.docs_only != 'true'
+        uses: actions/checkout@v4
+      - if: needs.repository.outputs.docs_only != 'true'
+        uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
       - name: Read pinned Harness version
+        if: needs.repository.outputs.docs_only != 'true'
         id: baseline
         run: |
           node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+b.commit)' >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - if: needs.repository.outputs.docs_only != 'true'
+        uses: actions/checkout@v4
         with:
           repository: ${{ steps.baseline.outputs.repository }}
           ref: ${{ steps.baseline.outputs.commit }}
           path: upstream
           persist-credentials: false
       - name: Build pinned Harness
+        if: needs.repository.outputs.docs_only != 'true'
         working-directory: upstream
         run: |
           corepack pnpm install --frozen-lockfile
           corepack pnpm run build
-      - run: npm run test:smoke -- "$GITHUB_WORKSPACE/upstream"
+      - if: needs.repository.outputs.docs_only != 'true'
+        run: npm run test:smoke -- "$GITHUB_WORKSPACE/upstream"
