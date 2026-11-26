@@ -1,6 +1,6 @@
 # 数据对象模型
 
-字段和类型见 [schemas.json](contracts/v1/schemas.json)。本文件描述跨对象不变量，状态见 [DOMAIN](DOMAIN.md)。
+接口字段和类型见 [v1 schema](contracts/v1/schemas.json) 与 [v2 schema](contracts/v2/schemas.json)。接口版本独立于持久化记录的 `schemaVersion`。本文件描述跨对象不变量，状态见 [DOMAIN](DOMAIN.md)。
 
 Task 保存当前 brief、执行选择、状态和 revision。Run 从属于 Task，一次 active 状态的执行拥有唯一活动 Run。根会话必须属于对应工作区；子会话只有可确认的派生关系才纳入统计。Submission 关联 Run、briefRevision、交付版本及证据。Decision 绑定当前 Submission，由已认证用户提交。历史提交和验收记录只追加。
 

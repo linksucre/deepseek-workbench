@@ -1,0 +1,174 @@
+{
+  "version": 2,
+  "error": "Error",
+  "operations": [
+    {
+      "id": "task.create",
+      "input": "CreateTask",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-002"
+    },
+    {
+      "id": "task.updateBrief",
+      "input": "UpdateBrief",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-002"
+    },
+    {
+      "id": "task.get",
+      "input": "GetTask",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-007"
+    },
+    {
+      "id": "task.list",
+      "input": "ListTasks",
+      "output": "TaskPage",
+      "actor": "user",
+      "requirement": "FR-007"
+    },
+    {
+      "id": "task.choose",
+      "input": "ChooseExecution",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-003"
+    },
+    {
+      "id": "task.ready",
+      "input": "TaskMutation",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-002"
+    },
+    {
+      "id": "task.start",
+      "input": "TaskMutation",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.reconcile",
+      "input": "ReconcileRun",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.pause",
+      "input": "TaskMutation",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.resume",
+      "input": "TaskMutation",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.cancel",
+      "input": "TaskMutation",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.submit",
+      "input": "SubmitTask",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-005"
+    },
+    {
+      "id": "task.decide",
+      "input": "DecideTask",
+      "output": "TaskDetail",
+      "actor": "user",
+      "requirement": "FR-006"
+    },
+    {
+      "id": "agent.suggest",
+      "input": "AgentSuggest",
+      "output": "AgentAck",
+      "actor": "host-bound-agent",
+      "requirement": "FR-003"
+    },
+    {
+      "id": "agent.submit",
+      "input": "AgentSubmit",
+      "output": "AgentAck",
+      "actor": "host-bound-agent",
+      "requirement": "FR-005"
+    },
+    {
+      "id": "task.usage",
+      "input": "GetTask",
+      "output": "UsageSummary",
+      "actor": "user",
+      "requirement": "FR-008"
+    },
+    {
+      "id": "task.prompt",
+      "input": "TaskPrompt",
+      "output": "PromptReceipt",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.conversation",
+      "input": "TaskConversation",
+      "output": "ConversationView",
+      "actor": "user",
+      "requirement": "FR-007"
+    },
+    {
+      "id": "task.delegate",
+      "input": "DelegateReview",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.reviews",
+      "input": "GetTask",
+      "output": "ReviewList",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.reconcile",
+      "input": "ReviewAction",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.forward",
+      "input": "ReviewAction",
+      "output": "PromptReceipt",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.context.index",
+      "input": "GetTask",
+      "output": "TaskContextIndex",
+      "actor": "user",
+      "requirement": "FR-009"
+    },
+    {
+      "id": "task.context.load",
+      "input": "ReadContextSource",
+      "output": "ContextSourceView",
+      "actor": "user",
+      "requirement": "FR-009"
+    }
+  ]
+}

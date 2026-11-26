@@ -66,25 +66,33 @@ function checkDependencies(id, ancestors = []) {
 }
 for (const id of tasks) checkDependencies(id)
 
-const schema = json('contracts/v1/schemas.json')
-verifySchemaMeta(schema)
-const operations = json('contracts/v1/operations.json')
-assert.equal(operations.version, 1)
-assert.ok(Object.hasOwn(schema.$defs, operations.error))
-unique(operations.operations.map(operation => operation.id), 'API operation')
-for (const operation of operations.operations) {
-  assert.ok(requirements.has(operation.requirement), `Unknown requirement for ${operation.id}`)
-  assert.ok(['user', 'host-bound-agent'].includes(operation.actor))
-  for (const key of [operation.input, operation.output]) assert.ok(Object.hasOwn(schema.$defs, key), `Unknown schema ${key}`)
-}
-function checkRefs(value) {
-  if (!value || typeof value !== 'object') return
-  if (Object.hasOwn(value, '$ref')) {
-    assert.ok(value.$ref.startsWith('#/$defs/') && Object.hasOwn(schema.$defs, value.$ref.slice(8)), `Unresolved ref ${value.$ref}`)
+function checkContract(version) {
+  const directory = `contracts/v${version}`
+  const schema = json(`${directory}/schemas.json`)
+  const index = json(`${directory}/operations.json`)
+  verifySchemaMeta(schema)
+  assert.equal(schema.$id, `urn:deepseek-workbench:v${version}`)
+  assert.equal(index.version, version)
+  assert.ok(Object.hasOwn(schema.$defs, index.error))
+  unique(index.operations.map(operation => operation.id), `API v${version} operation`)
+  for (const operation of index.operations) {
+    assert.ok(requirements.has(operation.requirement), `Unknown requirement for ${operation.id}`)
+    assert.ok(['user', 'host-bound-agent'].includes(operation.actor))
+    for (const type of [operation.input, operation.output]) {
+      assert.ok(Object.hasOwn(schema.$defs, type), `Unknown schema ${type} in ${directory}`)
+    }
   }
-  for (const child of Object.values(value)) checkRefs(child)
+  function checkRefs(value) {
+    if (!value || typeof value !== 'object') return
+    if (Object.hasOwn(value, '$ref')) {
+      assert.ok(value.$ref.startsWith('#/$defs/') && Object.hasOwn(schema.$defs, value.$ref.slice(8)), `Unresolved ref ${value.$ref}`)
+    }
+    for (const child of Object.values(value)) checkRefs(child)
+  }
+  checkRefs(schema)
+  return `v${version}: ${index.operations.length}`
 }
-checkRefs(schema)
+const contractCounts = [1, 2].map(checkContract).join(', ')
 const baseline = json('harness-baseline.json')
 assert.match(baseline.commit, /^[\da-f]{40}$/)
 assert.equal(json('package.json').engines.dsh, baseline.version)
@@ -107,6 +115,7 @@ if (process.argv.includes('--base')) {
   const base = process.argv[process.argv.indexOf('--base') + 1]
   assert.match(base ?? '', /^[\da-f]{40}$/)
   const changed = new Set(git('diff', '--no-renames', '--name-only', '-z', `${base}...HEAD`).split('\0'))
+  assert.ok(![...changed].some(file => file.startsWith('contracts/v1/')), 'The v1 contract is frozen')
   for (const file of changed) {
     const module = /^src\/([^/]+)\//.exec(file)?.[1]
     if (module && !file.endsWith('.md')) {
@@ -120,4 +129,4 @@ if (process.argv.includes('--base')) {
     }
   }
 }
-console.log(`PASS: ${requirements.size} requirements, ${tasks.size} tasks, ${tests.size} test cases, ${acceptance.length} acceptance criteria, ${operations.operations.length} API operations.`)
+console.log(`PASS: ${requirements.size} requirements, ${tasks.size} tasks, ${tests.size} test cases, ${acceptance.length} acceptance criteria, API operations (${contractCounts}).`)

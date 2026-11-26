@@ -2,7 +2,8 @@
 
 ```text
 src/          模块目录，各目录内的 DESIGN.md 标明边界
-contracts/v1/ 公共操作索引与 JSON Schema
+contracts/v1/ 冻结的原公共契约
+contracts/v2/ 公共操作索引与 JSON Schema
 tests/        集成测试；新增 unit/、fixtures/、e2e/ 按工单落地
 scripts/      本地与 CI 公用门禁
 docs/         开发规范、部署、ADR 和后续验证记录

@@ -17,3 +17,5 @@
 本地 M0 门禁先运行 `npm ci`，再运行 `npm run check` 和 `npm run test:smoke -- /path/to/built/deepseek-harness`。CI 从固定提交构建上游，运行相同集成脚本。真实模型试跑属于 M1 验收，单独保存脱敏证据。失败应记范围、复现、预期及实际，避免把跳过写成通过。
 
 纯文档 PR 仍执行仓库门禁。若差异中的所有路径都在 CI 的 Markdown 白名单内，`Harness integration` 在 Linux 上记录适用范围。混合变更、运行代码、契约、测试、工作流和主分支推送继续在 macOS 构建固定 Harness 并运行冒烟。
+
+TST-009 通过 [契约版本回归](tests/regression/api-versioning.test.mjs) 验证 v1 与 v2 能同时加载、原操作索引不漂移，以及提交和验收响应的版本边界。
