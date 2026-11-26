@@ -12,7 +12,7 @@ import { createHostConversation } from './host-conversation.mjs'
 import { createHostStart } from './host-start.mjs'
 import { createTaskService } from './task-service.mjs'
 
-const endpoint = '/workbench/v1/command'
+const endpoint = '/workbench/v2/command'
 const owner = Object.freeze({ kind: 'user', actorId: 'harness-owner' })
 const loopback = new Set(['127.0.0.1', '::1'])
 const readJSON = async path => JSON.parse(await readFile(new URL(path, import.meta.url), 'utf8'))
@@ -49,12 +49,12 @@ async function readBody(req) {
 
 /**
  * Mount the explicit local owner command carrier. The logical operation shapes
- * stay in contracts/v1. The caller supplies the pinned Host storage/schema APIs.
+ * stay in contracts/v2. The caller supplies the pinned Host storage/schema APIs.
  */
 export async function mountWorkbenchHost(ctx, { Ajv2020, z, defineDomain, domainTable, delivery, usagePolicy, evidencePolicy }) {
   if (!loopback.has(ctx.webServer.host)) throw new Error('Workbench commands require a loopback listener')
-  const schema = await readJSON('../../contracts/v1/schemas.json')
-  const index = await readJSON('../../contracts/v1/operations.json')
+  const schema = await readJSON('../../contracts/v2/schemas.json')
+  const index = await readJSON('../../contracts/v2/operations.json')
   const ajv = new Ajv2020()
   ajv.addFormat('uuid', value => z.uuid().safeParse(value).success)
   ajv.addFormat('date', value => z.iso.date().safeParse(value).success)

@@ -50,3 +50,7 @@ TST-010 双版本 profile 验证使用 `node tests/integration/host-delivery-smo
 TST-012 的真实 Host 回归先提交较早的展示，退回并冷启动后拒绝按文件或最近展示使用退回前未选产物。重新展示后允许提交，且旧退回请求可原样重放。
 
 TST-007 的候选安装从公开 Harness 提交开始，还原仓库内的固定存储补丁。错误基线、校验和不匹配或目标提交不符时终止构建。真实 Host 测试和安装归档均使用同一个目标提交。
+
+TST-009 通过 [契约版本回归](tests/regression/api-versioning.test.mjs) 验证 v1 与 v2 能同时加载，以及提交和验收响应的版本边界。
+
+用 `node tests/integration/host-delivery-smoke.mjs /path/to/built/deepseek-harness --review-profile-upgrade-from=/path/to/preview-workbench --verify-api-upgrade` 验证 API 迁移。预览检出为 `e193abd` 且已安装依赖。用预览 v1 写入普通消息和审阅回送，通过 v2 冷重放，检查冲突、原生消息去重、备份回退，以及预览地址在新 Host 上拒绝调用。

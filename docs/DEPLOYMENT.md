@@ -129,3 +129,7 @@ DEV-005 评审分支使用本机隔离的 Harness 补丁，按 [任务记录保�
 在已有命令末尾追加该选项，可以同时保留第三个位置参数的用量配置。修改规则后重启独立 profile。移除配置可恢复逐项人工验收，历史提交流程仍能读取已保存的证据。
 
 升级审阅回送前停止同一 profile 上的旧 Workbench，备份任务存储及原生会话。启动新 Host 时为旧 Run 记录原生截止游标。通过任务内「核对回送」重复原请求。历史 ID 与正文冲突、日志无法读全或结果尚无证据时，保留现有状态并在原会话核对。回退使用升级前同一份任务与会话备份。 [审阅兼容设计](design/M3-BOUNDED-REVIEW.md)
+
+## 从联调预览升级到 API v2
+
+在替换安装包前停写并备份完整 Harness profile。使用同一份 profile 的副本升级并复验后再继续生产写入。命令客户端从联调地址 `/workbench/v1/command` 换到 `/workbench/v2/command`，工作区发现改用 `/workbench/v2/workspaces`。联调版已有的 v2 形状和原生工具 `workbench_submit` 保持兼容。核对旧回执时保留原逻辑操作、请求 ID 与输入，升级前后的进程使用独立副本验证；回退用独立的升级前 profile。冻结的原 v1 形状按 [版本设计](design/WORKBENCH-API-VERSIONING.md) 单独评估调用方需求。

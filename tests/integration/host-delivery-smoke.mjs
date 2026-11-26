@@ -16,6 +16,8 @@ const legacyCheckoutFlag = '--review-profile-upgrade-from='
 const legacyCheckoutOption = process.argv.slice(3).find(arg => arg.startsWith(legacyCheckoutFlag))
 const legacyCheckout = legacyCheckoutOption?.slice(legacyCheckoutFlag.length)
 if (legacyCheckoutOption) assert.ok(legacyCheckout, 'Supply an installed legacy Workbench checkout')
+const verifyApiUpgrade = process.argv.includes('--verify-api-upgrade')
+assert.ok(!verifyApiUpgrade || legacyCheckout, 'Supply the v1 Workbench checkout for the API upgrade test')
 const legacyHarnessFlag = '--review-legacy-harness='
 const legacyHarnessOption = process.argv.slice(3).find(arg => arg.startsWith(legacyHarnessFlag))
 const legacyHarnessPath = legacyHarnessOption?.slice(legacyHarnessFlag.length)
@@ -174,7 +176,7 @@ async function until(read, description, timeout = 25_000) {
   throw new Error(`Unable to verify ${description} (Host: ${exit})\n${output.replace(/dsh web: .+/g, 'dsh web: [private URL]')}`)
 }
 
-async function start(probe = {}, { workbench = true, dataHome = data, overlay = patch, hostCheckout = checkout } = {}) {
+async function start(probe = {}, { workbench = true, dataHome = data, overlay = patch, hostCheckout = checkout, apiVersion = 2 } = {}) {
   output = ''
   child = spawn(process.execPath, [
     '--import', 'tsx/esm', 'apps/cli/src/bin.ts', '--profile', 'web', ...(workbench ? ['--patch', overlay] : []),
@@ -215,7 +217,7 @@ async function start(probe = {}, { workbench = true, dataHome = data, overlay = 
   rpc.workbench = async (operation, input, options = {}) => {
     const headers = { 'content-type': 'application/json', origin: options.origin ?? origin }
     if (!options.anonymous) headers.cookie = cookie
-    const response = await fetch(`${origin}/workbench/v1/command`, {
+    const response = await fetch(`${origin}/workbench/v${options.apiVersion ?? apiVersion}/command`, {
       method: 'POST', signal: AbortSignal.timeout(options.timeout ?? 10_000), headers,
       body: JSON.stringify({ operation, input }),
     })
@@ -272,12 +274,16 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   assert.equal(review.summary, 'independent review')
   const common = { taskId, expectedRevision: (await rpc.workbench('task.get', { taskId })).task.revision }
   const forward = { ...common, requestId: 'legacy-forward', reviewId: review.reviewId }
-  const ordinary = { ...common, requestId: 'review-forward:legacy-ordinary', text: 'Ordinary legacy prompt' }
   const legacyId = requestId => 'workbench-' + hash(JSON.stringify([taskId, runId, requestId]))
-  const legacyForwardId = legacyId(`review-forward:${forward.requestId}`)
-  const ordinaryId = legacyId(ordinary.requestId)
+  const forwardId = requestId => 'workbench-review-forward-v2-' + hash(JSON.stringify([taskId, runId, requestId]))
+  const legacyForwardId = verifyApiUpgrade ? forwardId(forward.requestId) : legacyId(`review-forward:${forward.requestId}`)
   const ack = { sessionId, accepted: true }
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
+  const ordinary = {
+    taskId, expectedRevision: (await rpc.workbench('task.get', { taskId })).task.revision,
+    requestId: 'review-forward:legacy-ordinary', text: 'Ordinary legacy prompt',
+  }
+  const ordinaryId = legacyId(ordinary.requestId)
   assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
   await until(async () => (await byId(legacyForwardId)).length === 1 && (await byId(ordinaryId)).length === 1,
     'legacy plugin commits the actual forward and ordinary prompt')
@@ -297,12 +303,17 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
   assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
   const conflicting = { ...forward, requestId: 'legacy-ordinary' }
-  assert.equal((await rpc.workbench('task.review.forward', conflicting, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  if (verifyApiUpgrade) {
+    await rpc.workbench('task.get', { taskId }, { apiVersion: 1, status: [404, 405] })
+    assert.equal((await rpc.workbench('task.prompt', { ...ordinary, text: 'Changed prompt' }, { status: 400 })).code, 'INVALID')
+  } else {
+    assert.equal((await rpc.workbench('task.review.forward', conflicting, { status: 409 })).code, 'RECONCILIATION_REQUIRED')
+  }
   assert.deepEqual(await snapshot(), before)
   assert.equal(allModelRequests, beforeReadRequests)
 
-  const newForward = { ...conflicting, requestId: 'forward-after-upgrade' }
-  const newId = 'workbench-review-forward-v2-' + hash(JSON.stringify([taskId, runId, newForward.requestId]))
+  const newForward = { ...conflicting, expectedRevision: before.detail.task.revision, requestId: 'forward-after-upgrade' }
+  const newId = forwardId(newForward.requestId)
   assert.deepEqual(await rpc.workbench('task.review.forward', newForward), ack)
   await until(async () => (await byId(newId)).length === 1, 'upgraded plugin commits a fresh forward')
   await waitIdle()
@@ -313,7 +324,7 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
 
   const restored = join(root, 'legacy-profile-restored')
   await cp(backup, restored, { recursive: true })
-  rpc = await start({}, { dataHome: restored, overlay: legacyPatch, hostCheckout: legacyHarness })
+  rpc = await start({}, { dataHome: restored, overlay: legacyPatch, hostCheckout: legacyHarness, apiVersion: 1 })
   assert.deepEqual(await snapshot(), before)
   assert.deepEqual(await rpc.workbench('task.review.forward', forward), ack)
   assert.deepEqual(await rpc.workbench('task.prompt', ordinary), ack)
@@ -327,7 +338,9 @@ async function verifyProfileUpgrade(rpc, brief, legacyPatch) {
   assert.deepEqual(await rpc.workbench('task.review.forward', newForward), ack)
   assert.equal((await byId(newId)).length, 1)
   assert.equal(allModelRequests, afterWriteRequests)
-  console.log('PASS: real legacy forward and ordinary prompt survive profile upgrade and independent backup rollback.')
+  console.log(verifyApiUpgrade
+    ? 'PASS: preview v1 receipts replay through v2 with no duplicate writes, and the backup rolls back to preview v1.'
+    : 'PASS: real legacy forward and ordinary prompt survive profile upgrade and independent backup rollback.')
 }
 
 hostSmoke: try {
@@ -353,7 +366,7 @@ hostSmoke: try {
     legacyPatch = join(root, 'legacy.patch.yml')
     execFileSync(process.execPath, [resolve(legacyCheckout, 'scripts/source-overlay.mjs'), legacyHarness, legacyPatch, usagePolicy])
   }
-  let rpc = legacyPatch ? await start({}, { overlay: legacyPatch, hostCheckout: legacyHarness })
+  let rpc = legacyPatch ? await start({}, { overlay: legacyPatch, hostCheckout: legacyHarness, apiVersion: 1 })
     : await start({ WORKBENCH_TEST_FAIL_ATTACH: '1' })
   const page = await rpc.page('/workbench')
   assert.equal(page.status, 200)
@@ -365,7 +378,7 @@ hostSmoke: try {
   const otherPath = join(root, 'other-workspace')
   await mkdir(otherPath)
   const { workspace: otherWorkspace } = await rpc('workspace/create', { path: otherPath })
-  assert.ok((await (await rpc.page('/workbench/v1/workspaces')).json()).some(item => item.id === workspace.workspaceId))
+  assert.ok((await (await rpc.page(`/workbench/v${legacyPatch ? 1 : 2}/workspaces`)).json()).some(item => item.id === workspace.workspaceId))
   const brief = {
     requestId: 'workbench-create', workspaceId: workspace.workspaceId, title: 'Native workbench',
     goal: 'Verify task persistence', criteria: [{ id: 'facts', description: 'Check sources' }],

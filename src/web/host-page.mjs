@@ -19,7 +19,7 @@ export async function mountWorkbenchPage(ctx) {
     }))
   }
   ctx.effect(() => ctx.webServer.register({
-    kind: 'exact', path: '/workbench/v1/workspaces', auth: 'required',
+    kind: 'exact', path: '/workbench/v2/workspaces', auth: 'required',
     resource: async (_request, peer) => peer?.principal.kind === 'owner'
       ? Response.json(ctx.workspaceRegistry.list().map(({ id, title, path }) => ({ id, title, path })),
         { headers: { 'cache-control': 'no-store' } })

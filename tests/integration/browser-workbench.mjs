@@ -155,7 +155,7 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   const contextReads = []
   page.on('request', request => {
-    if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v1/command')) return
+    if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v2/command')) return
     const { operation } = request.postDataJSON()
     if (operation.startsWith('task.context.')) contextReads.push(operation)
   })
@@ -247,7 +247,7 @@ try {
     if (deliverables) await deliverableField.fill(deliverables)
     if (materials) await page.getByLabel(/资料来源/).fill(materials)
     const onSave = operation => page.waitForResponse(response =>
-      response.url().endsWith('/workbench/v1/command') && response.request().method() === 'POST' &&
+      response.url().endsWith('/workbench/v2/command') && response.request().method() === 'POST' &&
       response.request().postDataJSON().operation === operation)
     const created = materials ? onSave('task.create') : null
     await activate(button('保存任务'))
@@ -320,7 +320,7 @@ try {
     return result.value.items.map(item => item.sessionId)
   }
   async function workbenchCommand(operation, input) {
-    const endpoint = new URL('/workbench/v1/command', page.url())
+    const endpoint = new URL('/workbench/v2/command', page.url())
     const response = await page.request.post(endpoint.href, {
       headers: { origin: endpoint.origin }, data: { operation, input },
     })
@@ -423,7 +423,7 @@ try {
   await evidence.getByText('用户确认 · 通过', { exact: true }).first().waitFor()
 
   // This response fixture exercises contract variants the current Host does not emit.
-  const commandRoute = '**/workbench/v1/command'
+  const commandRoute = '**/workbench/v2/command'
   await page.route(commandRoute, async route => {
     if (route.request().postDataJSON()?.operation !== 'task.get') return route.continue()
     const response = await route.fetch()
@@ -691,7 +691,7 @@ try {
   await taskButton('browser discard start intent').waitFor()
   await page.locator('body:not([aria-busy])').waitFor()
 
-  const workspaceCommand = '**/workbench/v1/command'
+  const workspaceCommand = '**/workbench/v2/command'
   const { promise: listHeld, resolve: reportListHeld } = Promise.withResolvers()
   const { promise: releaseList, resolve: finishDelayedList } = Promise.withResolvers()
   async function holdWorkspaceList(route) {
@@ -706,7 +706,7 @@ try {
   try {
     await Promise.all([
       page.waitForRequest(request => request.method() === 'POST' &&
-        request.url().endsWith('/workbench/v1/command') && request.postDataJSON()?.operation === 'task.list' &&
+        request.url().endsWith('/workbench/v2/command') && request.postDataJSON()?.operation === 'task.list' &&
         request.postDataJSON().input.workspaceId === delayedScope),
       workspaceSelect.selectOption(delayedScope),
     ])
@@ -740,7 +740,7 @@ try {
     const [response] = await Promise.all([
       page.waitForResponse(response => {
         const request = response.request()
-        if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v1/command')) return false
+        if (request.method() !== 'POST' || !request.url().endsWith('/workbench/v2/command')) return false
         const { operation, input } = request.postDataJSON()
         return operation === 'task.list' && input.workspaceId === scope
       }),

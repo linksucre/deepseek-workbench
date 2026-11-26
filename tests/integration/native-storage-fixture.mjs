@@ -22,7 +22,7 @@ export async function nativeStorageFixture(path, { expectedCommit } = {}) {
     join(checkout, 'packages/storage/storage-domain/lib/index.js')).href)
   const { JsonStorageBackend } = await import(pathToFileURL(
     join(checkout, 'packages/storage/storage-json/lib/index.js')).href)
-  const schema = await loadJson(new URL('../../contracts/v1/schemas.json', import.meta.url))
+  const schema = await loadJson(new URL('../../contracts/v2/schemas.json', import.meta.url))
   const ajv = new Ajv2020({ validateFormats: false })
   ajv.addSchema(schema)
   const validateDetail = ajv.compile({ $ref: `${schema.$id}#/$defs/TaskDetail` })
