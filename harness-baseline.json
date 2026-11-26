@@ -1,6 +1,8 @@
 {
   "repository": "deepseek-ai/deepseek-harness",
-  "commit": "4b399c39a6d1479cd84ca591b4d7c88e24d38a96",
+  "commit": "f17e00c4ea12f5b334071ea8feac58bbd31953aa",
   "version": "0.2.3-alpha.2",
-  "profile": "web"
+  "profile": "web",
+  "upstreamCommit": "4b399c39a6d1479cd84ca591b4d7c88e24d38a96",
+  "bundleSha256": "7d5aaadf9c4571a5aaa38e9b415604bf030b65db5c85d3a9ced2775deebc39e4"
 }

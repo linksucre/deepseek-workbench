@@ -68,7 +68,7 @@ jobs:
         if: needs.repository.outputs.docs_only != 'true'
         id: baseline
         run: |
-          node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+b.commit)' >> "$GITHUB_OUTPUT"
+          node --input-type=module -e 'import {readFileSync} from "node:fs"; const b=JSON.parse(readFileSync("harness-baseline.json")); console.log("repository="+b.repository); console.log("commit="+(b.upstreamCommit ?? b.commit))' >> "$GITHUB_OUTPUT"
       - if: needs.repository.outputs.docs_only != 'true'
         uses: actions/checkout@v4
         with:
@@ -76,6 +76,9 @@ jobs:
           ref: ${{ steps.baseline.outputs.commit }}
           path: upstream
           persist-credentials: false
+      - name: Materialize pinned Harness
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node scripts/materialize-harness.mjs "$GITHUB_WORKSPACE/upstream"
       - name: Build pinned Harness
         if: needs.repository.outputs.docs_only != 'true'
         working-directory: upstream
@@ -83,4 +86,38 @@ jobs:
           corepack pnpm install --frozen-lockfile
           corepack pnpm run build
       - if: needs.repository.outputs.docs_only != 'true'
+        run: npm ci
+      - if: needs.repository.outputs.docs_only != 'true'
         run: npm run test:smoke -- "$GITHUB_WORKSPACE/upstream"
+      - if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/storage-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/application-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" --review-recovery-regressions
+      - name: Verify a confirmed forward refusal
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/host-delivery-smoke.mjs "$GITHUB_WORKSPACE/upstream" --review-recovery-regressions=forward-pre-admission
+      - if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/usage-host-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Verify persisted task context
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/context-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Verify native worktree write isolation
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/worktree-isolation-smoke.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Measure warm task list pagination
+        if: needs.repository.outputs.docs_only != 'true'
+        run: node tests/integration/list-performance.mjs "$GITHUB_WORKSPACE/upstream"
+      - name: Install pinned browser
+        if: needs.repository.outputs.docs_only != 'true'
+        working-directory: upstream/apps/web
+        run: corepack pnpm exec playwright install chromium
+      - name: Verify browser workflows from installed archive
+        if: needs.repository.outputs.docs_only != 'true'
+        run: |
+          package_dir="$(mktemp -d)"
+          archive="$(npm pack --pack-destination "$package_dir" --silent)"
+          npm install --prefix "$package_dir/install" --no-audit --no-fund "$package_dir/$archive"
+          export WORKBENCH_OVERLAY_GENERATOR="$package_dir/install/node_modules/deepseek-workbench/scripts/source-overlay.mjs"
+          node tests/integration/browser-workbench.mjs "$GITHUB_WORKSPACE/upstream"

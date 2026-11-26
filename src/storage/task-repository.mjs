@@ -1,0 +1,222 @@
+import { TaskError } from '../domain/task.mjs'
+
+export const TASK_DOMAIN = 'workbench_tasks'
+
+/** Open the task domain using the pinned Harness storage API and contract validator. */
+export async function openTaskRepository({ storageDomain, defineDomain, domainTable, z, validateDetail }) {
+  const text = z.string().min(1)
+  const detail = z.custom(validateDetail, 'Invalid TaskDetail contract')
+  const intent = z.strictObject({
+    intentId: text, reservedSessionId: text, runId: text, workspaceId: text,
+    agentPreset: text, requestDigest: text, createdAt: text,
+    receipt: z.strictObject({
+      sessionId: text, workspaceId: text, outcome: z.enum(['created', 'attach-failed']),
+    }).optional(),
+  })
+  const operation = z.strictObject({
+    actorId: text, operation: text, requestId: text, digest: text,
+  })
+  const receipt = operation.extend({ result: detail })
+  const stage = z.strictObject({
+    stageId: text, runId: text, afterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
+    openedAt: text,
+    deliveryAfterSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).optional(),
+    legacyForwardThrough: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable().optional(),
+    choices: z.array(z.strictObject({
+      revision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+      choice: z.unknown(), observedAt: text,
+    })),
+  })
+  const review = z.strictObject({
+    reviewId: text, runId: text, childSessionId: text, instruction: text.refine(value => [...value].length <= 2048),
+    status: z.enum(['reserved', 'completed', 'incomplete']), summary: z.string().max(8192), createdAt: text,
+    requestId: text, actorId: text, throughSeq: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).nullable(),
+  })
+  const reviewForward = z.strictObject({
+    actorId: text, requestId: text, reviewId: text, runId: text,
+    sessionId: text, nativeId: text, status: z.enum(['pending', 'accepted', 'rejected']),
+  })
+  const schema = z.strictObject({
+    schemaVersion: z.literal(1),
+    detail,
+    pendingIntent: intent.nullable(),
+    stages: z.array(stage).default([]),
+    reviews: z.array(review).default([]),
+    reviewForwards: z.array(reviewForward).default([]),
+    operations: z.array(receipt).min(1),
+  })
+  const domain = await storageDomain.open(defineDomain({
+    name: TASK_DOMAIN,
+    version: 1,
+    layout: 'per-record',
+    strictRecordDocuments: true,
+    tables: { tasks: domainTable(schema) },
+  }))
+  const table = domain.table('tasks')
+  let queue = Promise.resolve()
+
+  // A single repository owns this domain. The queue also serializes creation,
+  // because the native table exposes update and put but no insert-if-absent.
+  function serialize(action) {
+    const result = queue.then(action)
+    queue = result.catch(() => {})
+    return result
+  }
+
+  function replay(record, request) {
+    const found = record.operations.find(item =>
+      item.actorId === request.actorId && item.operation === request.operation && item.requestId === request.requestId)
+    if (found === undefined) return undefined
+    if (found.digest !== request.digest) throw new TaskError('INVALID', 'Request ID reused with a different input')
+    return structuredClone(found.result)
+  }
+
+  function checked(key, record) {
+    const parsed = schema.parse(record)
+    if (parsed.detail.task.id !== key ||
+        parsed.operations.some(item => item.result.task.id !== key) ||
+        (parsed.pendingIntent && parsed.pendingIntent.workspaceId !== parsed.detail.task.workspaceId)) {
+      throw new TaskError('INVALID', 'Storage key, task or intent identity mismatch')
+    }
+    if (parsed.reviews.some(review => !parsed.detail.runs.some(run => run.id === review.runId))) {
+      throw new TaskError('INVALID', 'Delegated review does not refer to a task run')
+    }
+    if (parsed.reviewForwards.some(forward =>
+      !parsed.reviews.some(review => review.reviewId === forward.reviewId && review.runId === forward.runId &&
+        review.status === 'completed') ||
+      !parsed.detail.runs.some(run => run.id === forward.runId && run.rootSessionId === forward.sessionId))) {
+      throw new TaskError('INVALID', 'Review forward does not match its review and root session')
+    }
+    for (const stage of parsed.stages) {
+      if (!parsed.detail.runs.some(run => run.id === stage.runId) ||
+          stage.choices.some(item => !validateDetail({
+            ...parsed.detail, task: { ...parsed.detail.task, choice: item.choice },
+          }))) {
+        throw new TaskError('INVALID', 'Stage history does not match its task contract')
+      }
+    }
+    return parsed
+  }
+
+  function current(key) {
+    const record = table.get(key)
+    return record === undefined ? undefined : checked(key, record)
+  }
+
+  return {
+    read(key) {
+      return structuredClone(current(key))
+    },
+
+    listTasks(workspaceId) {
+      const tasks = []
+      for (const key of table.keys()) {
+        const task = table.get(key).detail.task
+        if (task.workspaceId === workspaceId) tasks.push(task)
+      }
+      return structuredClone(tasks)
+    },
+
+    findActiveBySession(sessionId) {
+      let found
+      for (const key of table.keys()) {
+        const candidate = table.get(key)
+        const task = candidate.detail.task
+        if (!['active', 'review'].includes(task.status) ||
+            !candidate.detail.runs.some(run =>
+              run.id === task.activeRunId && run.endedAt === null && run.rootSessionId === sessionId)) continue
+        if (found !== undefined) return undefined
+        found = checked(key, candidate)
+      }
+      return structuredClone(found)
+    },
+
+    create(detail, request) {
+      const input = structuredClone({ detail, request })
+      return serialize(async () => {
+        const { detail, request } = input
+        const key = detail.task.id
+        const identity = operation.parse(request)
+        const previous = current(key)
+        if (previous !== undefined) {
+          const result = replay(previous, identity)
+          if (result !== undefined) return result
+          throw new TaskError('REVISION_CONFLICT', 'Task ID already exists')
+        }
+        if (detail.task.status !== 'draft' || detail.task.revision !== 0) {
+          throw new TaskError('INVALID', 'Initial task must be a revision-zero draft')
+        }
+        const record = checked(key, {
+          schemaVersion: 1, detail, pendingIntent: null,
+          operations: [{ ...identity, result: detail }],
+        })
+        await table.put(key, record)
+        return structuredClone(record.detail)
+      })
+    },
+
+    commit(key, { request, expectedRevision }, transform) {
+      const input = structuredClone({ request, expectedRevision })
+      return serialize(async () => {
+        const identity = operation.parse(input.request)
+        const previous = current(key)
+        if (previous === undefined) throw new TaskError('NOT_FOUND', 'Task does not exist')
+        const replayed = replay(previous, identity)
+        if (replayed !== undefined) return replayed
+
+        const stored = await table.update(key, record => {
+          const prior = checked(key, record)
+          if (prior.detail.task.revision !== input.expectedRevision) {
+            throw new TaskError('REVISION_CONFLICT', 'Task revision changed')
+          }
+          const next = transform(structuredClone({ detail: prior.detail, pendingIntent: prior.pendingIntent, stages: prior.stages, reviews: prior.reviews, reviewForwards: prior.reviewForwards }))
+          if (next.detail.task.revision !== input.expectedRevision + 1 ||
+              next.detail.task.workspaceId !== prior.detail.task.workspaceId) {
+            throw new TaskError('INVALID', 'A commit must advance one revision within the same workspace')
+          }
+          return checked(key, {
+            schemaVersion: 1,
+            detail: structuredClone(next.detail),
+            pendingIntent: structuredClone(next.pendingIntent),
+            stages: structuredClone(next.stages ?? prior.stages),
+            reviews: structuredClone(next.reviews ?? prior.reviews),
+            reviewForwards: structuredClone(next.reviewForwards ?? prior.reviewForwards),
+            operations: [...prior.operations, { ...identity, result: structuredClone(next.detail) }],
+          })
+        })
+        return structuredClone(stored.detail)
+      })
+    },
+
+    prepareReviewForwardCutoffs(capture) {
+      return serialize(async () => {
+        for (const key of table.keys()) {
+          const record = current(key)
+          const cutoffs = new Map()
+          for (const stage of record.stages) {
+            if (stage.legacyForwardThrough !== undefined) continue
+            const legacyPossible = record.reviews.some(review => review.runId === stage.runId && review.status === 'completed')
+            cutoffs.set(stage.runId, legacyPossible ? await capture(record, stage.runId) : -1)
+          }
+          if (cutoffs.size === 0) continue
+          // Startup metadata is prepared before registering command routes.
+          await table.update(key, raw => {
+            const latest = checked(key, raw)
+            return checked(key, { ...latest, stages: latest.stages.map(stage => cutoffs.has(stage.runId) &&
+              stage.legacyForwardThrough === undefined
+              ? { ...stage, legacyForwardThrough: cutoffs.get(stage.runId) } : stage) })
+          })
+        }
+      })
+    },
+
+    exportSnapshot() {
+      return serialize(() => [...table.keys()].sort()
+        .map(key => ({ key, record: structuredClone(current(key)) })))
+    },
+
+    close() {
+      return serialize(() => domain.close())
+    },
+  }
+}

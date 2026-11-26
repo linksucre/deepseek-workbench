@@ -3,7 +3,7 @@
 ```text
 src/          模块目录，各目录内的 DESIGN.md 标明边界
 contracts/v1/ 公共操作索引与 JSON Schema
-tests/        集成测试；新增 unit/、fixtures/、e2e/ 按工单落地
+tests/        unit/ 模块测试，regression/ 门禁负例，integration/ 原生 Host、Chromium 和夹具
 scripts/      本地与 CI 公用门禁
 docs/         开发规范、部署、ADR 和后续验证记录
 .github/      PR 模板和 CI

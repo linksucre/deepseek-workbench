@@ -113,6 +113,62 @@
       "output": "UsageSummary",
       "actor": "user",
       "requirement": "FR-008"
+    },
+    {
+      "id": "task.prompt",
+      "input": "TaskPrompt",
+      "output": "PromptReceipt",
+      "actor": "user",
+      "requirement": "FR-004"
+    },
+    {
+      "id": "task.conversation",
+      "input": "TaskConversation",
+      "output": "ConversationView",
+      "actor": "user",
+      "requirement": "FR-007"
+    },
+    {
+      "id": "task.delegate",
+      "input": "DelegateReview",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.reviews",
+      "input": "GetTask",
+      "output": "ReviewList",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.reconcile",
+      "input": "ReviewAction",
+      "output": "ReviewRecord",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.review.forward",
+      "input": "ReviewAction",
+      "output": "PromptReceipt",
+      "actor": "user",
+      "requirement": "FR-010"
+    },
+    {
+      "id": "task.context.index",
+      "input": "GetTask",
+      "output": "TaskContextIndex",
+      "actor": "user",
+      "requirement": "FR-009"
+    },
+    {
+      "id": "task.context.load",
+      "input": "ReadContextSource",
+      "output": "ContextSourceView",
+      "actor": "user",
+      "requirement": "FR-009"
     }
   ]
 }
